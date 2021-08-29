@@ -73,18 +73,63 @@ def create_note_links_table():
     ...
 
 
+# > Add functions
+
+def check_root_tag_unique(db: DB, tag_name: str):
+
+    query = """
+    select * from tags where tag = ? and parent_id IS NULL
+    """
+
+    output = db.ex(query, [tag_name])
+
+    if output:
+        raise sql.IntegrityError('Root tag not unique')
+
+
+def add_tag(db: DB, tag_name: str, parent_id: Optional[int] = None):
+
+    # Manually check that root tag is unique
+    if not parent_id:
+        check_root_tag_unique(db, tag_name)
+
+    query = """
+    insert into tags(tag, parent_id)
+    values(?, ?)
+    """
+
+    output = db.ex(query, (tag_name, parent_id))
+    print(output)
+
+
+
 
 # > Testing
-# ===========
+# # ===========
+# db.conn.close()
+# # -----------
+# # ===========
 # db_path = Path('test.db')
 # db = db_connection(db_path, True)
-# # -----------
-# # ===========
+# # # -----------
+# # # ===========
 # create_tags_table(db)
+# # # -----------
+# # ===========
+# add_tag(db, 'test', None)
 # # -----------
 # # ===========
-# pprint(db.ex("select * from sqlite_master where type='table'"))
+# add_tag(db, 'test', 1)
 # # -----------
 # # ===========
-# db_path.unlink()
+# db.ex('select * from tags where tag = "test" and parent_id IS NULL')
 # # -----------
+# # ===========
+# db.ex('select * from tags')
+# # -----------
+# # # ===========
+# # pprint(db.ex("select * from sqlite_master where type='table'"))
+# # # -----------
+# # # ===========
+# # db_path.unlink()
+# # # -----------
