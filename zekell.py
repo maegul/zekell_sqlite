@@ -1,6 +1,6 @@
 
-from typing import Optional
 from pathlib import Path
+from typing import Optional, Iterable
 import sqlite3 as sql
 from dataclasses import dataclass
 from pprint import pprint
@@ -12,11 +12,15 @@ class DB:
     conn: sql.Connection
     cursor: sql.Cursor
 
-    def ex(self, query: str):
+    def ex(self, query: str, params: Optional[Iterable] = None):
         """Execute query and return fetchall and commit"""
 
         with self.conn:
-            self.cursor.execute(query)
+            if params:
+                self.cursor.execute(query, params)
+            else:
+                self.cursor.execute(query)
+
             output = self.cursor.fetchall()
 
         return output
@@ -57,9 +61,14 @@ def create_tags_table(db: DB):
             id integer primary key autoincrement,
             tag text,
             parent_id text,
-            foreign key (parent_id) references tags (id)
+            foreign key (parent_id) references tags (id),
+            unique (
+                tag, parent_id
+                )
+            on conflict abort
         )
     """
+
     output = db.ex(query)
 
     print(output)
