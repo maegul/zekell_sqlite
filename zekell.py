@@ -50,7 +50,62 @@ def db_connection(db_path: Path, new: bool = False) -> DB:
 
 
 def create_notes_table(db: DB):
-    ...
+
+    db.ex('''
+        create table if not exists
+        notes (
+            id integer primary key,
+            title text,
+            metadata text,
+            body text,
+            mod_time text
+        )
+        ''')
+
+    # FTS virtual table
+    db.ex('''
+        create virtual table if not exists
+        notes_fts using fts5(
+            title,
+            body,
+            content='notes',
+            content_rowid='id'
+        )
+        ''')
+
+    # triggers to sync notes with FTS table
+
+    db.ex('''
+        create trigger if not exists
+        notes_ai
+        after insert on notes
+        begin
+            insert into notes_fts (rowid, title, body)
+                values (new.id, new.title, new.body);
+        end
+        ''')
+
+    db.ex('''
+        create trigger if not exists
+        notes_ad
+        after delete on notes
+        begin
+            insert into notes_fts(notes_fts, rowid, title, body)
+                values('delete', old.id, old.title, old.body);
+        end
+        ''')
+
+    db.ex('''
+        create trigger if not exists
+        notes_au
+        after update on notes
+        begin
+            insert into notes_fts(notes_fts, rowid, title, body)
+                values('delete', old.id, old.title, old.body);
+            insert into notes_fts (rowid, title, body)
+                values (new.id, new.title, new.body);
+        end
+        ''')
 
 
 def create_tags_table(db: DB):
@@ -113,32 +168,3 @@ def add_tag(db: DB, tag_name: str, parent_id: Optional[int] = None):
 
 
 
-# > Testing
-# # ===========
-# db.conn.close()
-# # -----------
-# # ===========
-# db_path = Path('test.db')
-# db = db_connection(db_path, True)
-# # # -----------
-# # # ===========
-# create_tags_table(db)
-# # # -----------
-# # ===========
-# add_tag(db, 'test', None)
-# # -----------
-# # ===========
-# add_tag(db, 'test', 1)
-# # -----------
-# # ===========
-# db.ex('select * from tags where tag = "test" and parent_id IS NULL')
-# # -----------
-# # ===========
-# db.ex('select * from tags')
-# # -----------
-# # # ===========
-# # pprint(db.ex("select * from sqlite_master where type='table'"))
-# # # -----------
-# # # ===========
-# # db_path.unlink()
-# # # -----------

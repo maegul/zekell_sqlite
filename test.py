@@ -1,7 +1,7 @@
 from pathlib import Path
+import datetime as dt
 import unittest
 import sqlite3 as sql
-from unittest.main import TestProgram
 
 import zekell
 
@@ -56,11 +56,55 @@ class TestCreateTables(unittest.TestCase):
         with self.assertRaises(sql.IntegrityError):
             zekell.add_tag(self._db, 'bad_parent_tag', 111)
 
+    def test_create_notes_tag(self):
+
+        db = self._db
+        zekell.create_notes_table(db)
+
+        table_check = db.ex(
+            "select * from sqlite_master where type='table' and name='notes'")
+
+        self.assertEqual(len(table_check), 1)
+
+    def test_fts_insert_delete_triggers(self):
+
+        db = self._db
+
+        db.ex(
+            '''
+            insert into notes
+            values(?, ?, ?, ?, ?)
+            ''',
+            (
+                int(dt.datetime.utcnow().strftime('%Y%m%d%H%M%S')),
+                'My first note',
+                '''---
+                title: My first note
+                tags: first, demo
+                ---''',
+                '''This is a demo note
+
+                Not much more to day''',
+                dt.datetime.utcnow().timestamp()
+
+            ))
+
+        self.assertEqual(
+            len(db.ex('select * from notes_fts')),
+            1
+            )
+
+        db.ex('delete from notes')
+
+        self.assertEqual(
+            len(db.ex('select * from notes_fts')),
+            0
+            )
+
     @classmethod
     def tearDownClass(cls) -> None:
         cls._db.conn.close()
         cls._db_path.unlink()
-
 
 
 if __name__ == '__main__':
