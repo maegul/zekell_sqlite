@@ -18,6 +18,7 @@ class TestCreateTables(unittest.TestCase):
     def setUpClass(cls):
         cls._db_path = Path('test.db')
         cls._db = zekell.db_connection(cls._db_path, True)
+        cls._note_id = 20210904100714
 
     def test_create_tags_table(self):
 
@@ -76,7 +77,7 @@ class TestCreateTables(unittest.TestCase):
             values(?, ?, ?, ?, ?)
             ''',
             (
-                int(dt.datetime.utcnow().strftime('%Y%m%d%H%M%S')),
+                self._note_id,
                 'My first note',
                 '''---
                 title: My first note
@@ -100,6 +101,70 @@ class TestCreateTables(unittest.TestCase):
             len(db.ex('select * from notes_fts')),
             0
             )
+
+    def test_create_note_links_table(self):
+
+        db = self._db
+        zekell.create_note_links_table(db)
+
+        table_check = db.ex(
+            "select * from sqlite_master where type='table' and name='note_links'")
+
+        self.assertEqual(len(table_check), 1)
+
+    def test_note_links_foreign_key(self):
+
+        db = self._db
+
+        db.ex(
+            '''
+            insert into notes
+            values(?, ?, ?, ?, ?)
+            ''',
+            (
+                self._note_id,
+                'My first note',
+                '''---
+                title: My first note
+                tags: first, demo
+                ---''',
+                '''This is a demo note
+
+                Not much more to day''',
+                dt.datetime.utcnow().timestamp()
+
+            ))
+
+        db.ex("""
+            insert into
+            note_links(parent_note_id, child_note_id)
+            values(?, ?)
+            """,
+            (self._note_id, self._note_id)
+            )
+
+        table_check = db.ex("select * from note_links")
+
+        self.assertEqual(len(table_check), 1)
+
+        with self.assertRaises(sql.IntegrityError):
+            db.ex("""
+                insert into
+                note_links(parent_note_id, child_note_id)
+                values(?, ?)
+                """,
+                (self._note_id - 1, self._note_id)
+                )
+
+        with self.assertRaises(sql.IntegrityError):
+            db.ex("""
+                insert into
+                note_links(parent_note_id, child_note_id)
+                values(?, ?)
+                """,
+                (self._note_id, self._note_id - 1)
+                )
+
 
     @classmethod
     def tearDownClass(cls) -> None:

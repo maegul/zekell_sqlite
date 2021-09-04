@@ -150,6 +150,60 @@ db.ex("select highlight(notes_fts, 1, '>>', '<<') from notes_fts where notes_fts
 # ===========
 db.ex("select snippet(notes_fts, 1, '>>', '<<', '...', 6) from notes_fts where notes_fts match 'demo'")
 # -----------
+
+
+# >> Note Links
+# ===========
+db.ex("select * from notes")
+# -----------
+# ===========
+create_note_links_table(db)
+# -----------
+# ===========
+db.ex('select * from notes')
+db.ex('select * from note_links')
+# -----------
+# ===========
+db.ex("""
+    create table test_fk(
+        id integer primary key,
+        ref_id integer,
+        cite_id integer,
+        foreign key (ref_id) references notes (id),
+        foreign key (cite_id) references notes (id)
+    )
+    """)
+# -----------
+# ===========
+db.ex("""
+    insert into test_fk(ref_id, cite_id) values(20210904100714, 163071404)
+    """)
+# -----------
+# ===========
+db.ex('select * from test_fk')
+# -----------
+# ===========
+db.ex("""
+    insert into
+    note_links(parent_note_id, child_note_id)
+    values(1630714042, 20210904100714)
+    """)
+# -----------
+# ===========
+db.ex("""
+    insert into
+    note_links(parent_note_id, child_note_id)
+    values(163071404, 20210904100714)
+    """)
+# -----------
+# ===========
+db.ex("""
+    insert into
+    note_links(parent_note_id, child_note_id)
+    values(1630714042, 2021090410071)
+    """)
+# -----------
+
 # # ===========
 create_tags_table(db)
 # # -----------

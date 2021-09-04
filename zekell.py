@@ -108,6 +108,22 @@ def create_notes_table(db: DB):
         ''')
 
 
+def create_note_links_table(db: DB):
+
+    db.ex("""
+        create table if not exists
+        note_links (
+            id interger primary key,
+            parent_note_id integer,
+            child_note_id integer,
+            foreign key (parent_note_id)
+                references notes (id),
+            foreign key (child_note_id)
+                references notes (id)
+        )
+        """)
+
+
 def create_tags_table(db: DB):
 
     query = """
@@ -129,11 +145,8 @@ def create_tags_table(db: DB):
     print(output)
 
 
+
 def create_note_tags_table():
-    ...
-
-
-def create_note_links_table():
     ...
 
 

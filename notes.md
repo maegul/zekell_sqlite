@@ -9,6 +9,8 @@
 __Tags__
 
 * autoincrement primary key
+  - autoincrement to prevent reuse of `rowids` when freed up ... which might be valuable for data integrity over the lifetime of the database, 
+  - though it apparently takes up more CPU, addition of tags won't be common, so it shouldn't be a problem
 * long form (tag + parent_id)
 * Use recursive queries to get full parent path
 * Ensure uniqueness across tag name and parent_id
@@ -100,8 +102,10 @@ __FIles__
 
 # Tasks
 
-- [X] Create and add to files with FTS
-- [ ] Create and add to references table
-- [ ] create and add to note-tags table
-
+- [ ] Create files with FTS
+- [ ] Add to files/notes table 
+- [ ] Create references table
+- [ ] add to references table
+- [ ] create note-tags table
+- [ ] add to note_tags table
 
