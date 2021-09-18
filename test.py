@@ -12,23 +12,31 @@ class TestTest(unittest.TestCase):
         self.assertEqual('test', 'test')
 
 
-class TestCreateTables(unittest.TestCase):
+class TestSchema(unittest.TestCase):
 
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls._db_path = Path('test.db')
         cls._db = zekell.db_connection(cls._db_path, True)
+
+    def test_run_schema(self):
+        zekell.db_init(self._db)
+
+        table_check = self._db.ex(
+            'select name from sqlite_master where type="table"'
+            )
+
+        self.assertNotEqual(len(table_check), 0)
+
+
+class TestTables(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._db_path = Path('test.db')
+        cls._db = zekell.db_connection(cls._db_path, True)
+        zekell.db_init(cls._db)
         cls._note_id = 20210904100714
-
-    def test_create_tags_table(self):
-
-        db = self._db
-        zekell.create_tags_table(db)
-
-        table_check = db.ex(
-            "select * from sqlite_master where type='table' and name='tags'")
-
-        self.assertEqual(len(table_check), 1)
 
     def test_root_tag_unique(self):
         db = self._db
@@ -56,16 +64,6 @@ class TestCreateTables(unittest.TestCase):
 
         with self.assertRaises(sql.IntegrityError):
             zekell.add_tag(self._db, 'bad_parent_tag', 111)
-
-    def test_create_notes_tag(self):
-
-        db = self._db
-        zekell.create_notes_table(db)
-
-        table_check = db.ex(
-            "select * from sqlite_master where type='table' and name='notes'")
-
-        self.assertEqual(len(table_check), 1)
 
     def test_fts_insert_delete_triggers(self):
 
@@ -101,16 +99,6 @@ class TestCreateTables(unittest.TestCase):
             len(db.ex('select * from notes_fts')),
             0
             )
-
-    def test_create_note_links_table(self):
-
-        db = self._db
-        zekell.create_note_links_table(db)
-
-        table_check = db.ex(
-            "select * from sqlite_master where type='table' and name='note_links'")
-
-        self.assertEqual(len(table_check), 1)
 
     def test_note_links_foreign_key(self):
 
@@ -164,7 +152,6 @@ class TestCreateTables(unittest.TestCase):
                 """,
                 (self._note_id, self._note_id - 1)
                 )
-
 
     @classmethod
     def tearDownClass(cls) -> None:
