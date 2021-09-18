@@ -102,10 +102,18 @@ __FIles__
 
 # Tasks
 
-- [ ] Create files with FTS
-- [ ] Add to files/notes table 
-- [ ] Create references table
+- [X] Move all creation SQL code to `schema.sql`
+- [X] Adjust tests accordingly:
+- [X] Create files with FTS
+- [X] Create references table
+- [X] create note-tags table
+- [ ] create tags hierarchy auto-make trigger
+- [ ] create assets and asset links tables
+- [ ] Add to files/notes table
 - [ ] add to references table
-- [ ] create note-tags table
 - [ ] add to note_tags table
+- [ ] Parse files for metadata
+  - [ ] Add to table
+  - [ ] Include update and delete functionality 
+
 
