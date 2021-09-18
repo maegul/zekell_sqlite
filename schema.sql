@@ -77,5 +77,16 @@ tags (
 );
 
 
+-- > Note Tags Table
+
+create table if not exists
+    note_tags (
+        note_id integer,
+        tag_id integer,
+        foreign key (note_id) references notes (id),
+        foreign key (tag_id) references tags (id)
+        );
+
+
 
 

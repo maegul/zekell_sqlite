@@ -6,12 +6,6 @@ import sqlite3 as sql
 import zekell
 
 
-class TestTest(unittest.TestCase):
-
-    def test_basic(self):
-        self.assertEqual('test', 'test')
-
-
 class TestSchema(unittest.TestCase):
 
     @classmethod
@@ -120,10 +114,10 @@ class TestTables(unittest.TestCase):
 
                 Not much more to day''',
                 dt.datetime.utcnow().timestamp()
-
             ))
 
-        db.ex("""
+        db.ex(
+            """
             insert into
             note_links(parent_note_id, child_note_id)
             values(?, ?)
@@ -136,7 +130,8 @@ class TestTables(unittest.TestCase):
         self.assertEqual(len(table_check), 1)
 
         with self.assertRaises(sql.IntegrityError):
-            db.ex("""
+            db.ex(
+                """
                 insert into
                 note_links(parent_note_id, child_note_id)
                 values(?, ?)
@@ -145,13 +140,52 @@ class TestTables(unittest.TestCase):
                 )
 
         with self.assertRaises(sql.IntegrityError):
-            db.ex("""
+            db.ex(
+                """
                 insert into
                 note_links(parent_note_id, child_note_id)
                 values(?, ?)
                 """,
                 (self._note_id, self._note_id - 1)
                 )
+
+    def test_note_tag_foreign_key(self):
+
+        db = self._db
+
+        file_id = 123456
+        db.ex(
+            '''
+            insert into notes
+            values(?, ?, ?, ?, ?)
+            ''',
+            (
+                file_id,
+                'My first note',
+                '''---
+                title: My first note
+                tags: first, demo
+                ---''',
+                '''This is a demo note
+
+                Not much more to day''',
+                dt.datetime.utcnow().timestamp()
+                ))
+        zekell.add_tag(db, 'note_tag_test', parent_id=None)
+        tag_id = (
+            db.ex('''
+                select id from tags where tag = "note_tag_test"
+            ''')
+            [0][0]
+        )
+
+        # tag_id SHOULD BE id of the tag "test"
+        db.ex('insert into note_tags values (?, ?)', (file_id, tag_id))
+
+        with self.assertRaises(sql.IntegrityError):
+            # 2222 should not be an available
+            db.ex('insert into note_tags values (?, ?)', (file_id, 2222))
+
 
     @classmethod
     def tearDownClass(cls) -> None:
