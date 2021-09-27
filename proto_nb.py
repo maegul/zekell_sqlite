@@ -1,5 +1,6 @@
 # ===========
 from zekell import *
+import datetime as dt
 # -----------
 
 # > Testing
@@ -8,13 +9,21 @@ db.conn.close()
 # -----------
 # ===========
 db_path = Path('test.db')
+# -----------
+# ===========
+db_path.unlink()
+# -----------
+# ===========
 db = db_connection(db_path, True)
 # # -----------
 # >> Files table with FTS
 # ===========
-create_notes_table(db)
+db_init(db)
 # -----------
+db.ex('select name from sqlite_master where type = "table"')
+# ===========
 
+# -----------
 
 
 # cols: id, title, metadata, body, m-date
@@ -225,3 +234,255 @@ pprint(db.ex("select * from sqlite_master where type='table'"))
 # # ===========
 db_path.unlink()
 # # -----------
+
+
+# > Instantiating from schema file
+
+# ===========
+db = db_connection(Path('test.db'), True)
+# -----------
+# ===========
+schema = Path('schema.sql').read_text()
+print(schema)
+# -----------
+# ===========
+db.ex('select * from sqlite_master')
+# -----------
+# ===========
+db.cursor.executescript(schema)
+# -----------
+# ===========
+db.ex('select name from sqlite_master where type="table"')
+# -----------
+# ===========
+db.ex('pragma foreign_keys')
+# -----------
+# ===========
+import datetime as dt
+        db.ex(
+            '''
+            insert into notes
+            values(?, ?, ?, ?, ?)
+            ''',
+            (
+                123456,
+                'My first note',
+                '''---
+                title: My first note
+                tags: first, demo
+                ---''',
+                '''This is a demo note
+
+                Not much more to day''',
+                dt.datetime.utcnow().timestamp()
+
+            ))
+# -----------
+# ===========
+db.ex('select id,* from notes')
+# -----------
+
+# > note_tags_table
+# ===========
+db = db_connection(Path('test.db'), True)
+# -----------
+# ===========
+db.ex('select name from sqlite_master')
+# -----------
+# ===========
+db.ex('drop table note_tags')
+# -----------
+# ===========
+query = '''
+create table if not exists
+    note_tags (
+        note_id integer,
+        tag_id integer,
+        foreign key (note_id) references notes (id),
+        foreign key (tag_id) references tags (id)
+        );
+'''
+# -----------
+# ===========
+db.ex(query)
+# -----------
+# ===========
+db.ex('''
+    insert into note_tags values (1, 1)
+    ''')
+# -----------
+# ===========
+db_init(db)
+# -----------
+# ===========
+db.ex('select name from sqlite_master')
+# -----------
+# ===========
+file_id = int(dt.datetime.utcnow().strftime('%Y%m%d%H%M%S'))
+db.ex('''
+    insert into notes
+    values(?, ?, ?, ?, ?)
+    ''',
+    (
+        file_id,
+        'My first note',
+        '''---
+        title: My first note
+        tags: first, demo
+        ---''',
+        '''This is a demo note
+
+        Not much more to day''',
+        dt.datetime.utcnow().timestamp()
+
+        ))
+# -----------
+# ===========
+file_id
+# -----------
+# ===========
+db.ex('select * from notes')
+# -----------
+# ===========
+add_tag(db, 'test')
+# -----------
+# ===========
+db.ex('select * from tags')
+# -----------
+# ===========
+db.ex('insert into note_tags values (?, ?)', (file_id, 1))
+# -----------
+# ===========
+db.ex('select * from note_tags')
+# -----------
+# ===========
+# shouldn't work because of foreign key constraint
+db.ex('insert into note_tags values (?, ?)', (file_id, 2))
+# -----------
+# ===========
+db.ex('select id from tags')[0][0]
+# -----------
+
+
+# > Tags and auto parent tables
+
+# ===========
+db.ex('drop table if exists tags')
+db.ex('drop table if exists full_tag_paths')
+# -----------
+# ===========
+db.ex('''
+    insert into tags(tag, parent_id) values(
+        'test',
+        NULL
+    )
+    ''')
+# -----------
+# ===========
+db.ex('insert into tags(tag, parent_id) values("topics", NULL)')
+# -----------
+# ===========
+db.ex('''select * from tags''')
+# -----------
+# ===========
+db.ex('insert into tags(tag, parent_id) values("code", 2)')
+db.ex('insert into tags(tag, parent_id) values("sql", 2)')
+db.ex('insert into tags(tag, parent_id) values("joins", 4)')
+db.ex('insert into tags(tag, parent_id) values("functions", 3)')
+# -----------
+# ===========
+db.ex('insert into tags(tag, parent_id) values("code", 22)')
+# -----------
+# ===========
+db.ex('''
+    select id from tags where tag == 'topics'
+    ''')
+# -----------
+# ===========
+db.ex('''
+    select m.id, p.tag parent, m.tag, p.id parentid
+    from tags m
+    left join tags p
+    on m.parent_id = p.id
+    ''')
+# -----------
+# ===========
+db.ex('''
+    with recursive tags_parents(id, tag, parent_id, parent) as
+        (
+        select a.id, a.tag, a.parent_id, b.tag as parent
+        from tags a
+        left join tags b
+        on a.parent_id = b.id
+        ),
+    pnts(id, tag, parent_id, id_path, tag_path) as
+        (
+        select
+            id, tag, parent_id,
+            ifnull(parent_id, '-') as id_path, ifnull(parent, '-') as tag_path
+        from tags_parents
+        where parent_id is NULL
+        union
+        select
+            m.id, m.tag, m.parent_id,
+            ifnull(pnts.id_path, '-') || '/' || pnts.id as id_path,
+            ifnull(pnts.tag_path, '-') || '/' || pnts.tag as tag_path
+        from tags_parents m
+        join pnts
+        on pnts.id = m.parent_id
+        order by m.parent_id desc
+        )
+    select
+        id, tag,
+        id_path || '/' || id as full_path,
+        tag_path || '/' || tag as full_tag_path
+    from pnts
+    ''')
+
+# -----------
+# ===========
+db.ex('''
+    create table full_tag_paths as
+    with recursive tags_parents(id, tag, parent_id, parent) as
+        (
+        select a.id, a.tag, a.parent_id, b.tag as parent
+        from tags a
+        left join tags b
+        on a.parent_id = b.id
+        ),
+    pnts(id, tag, parent_id, id_path, tag_path) as
+        (
+        select
+            id, tag, parent_id,
+            ifnull(parent_id, '-') as id_path, ifnull(parent, '-') as tag_path
+        from tags_parents
+        where parent_id is NULL
+        union
+        select
+            m.id, m.tag, m.parent_id,
+            ifnull(pnts.id_path, '-') || '/' || pnts.id as id_path,
+            ifnull(pnts.tag_path, '-') || '/' || pnts.tag as tag_path
+        from tags_parents m
+        join pnts
+        on pnts.id = m.parent_id
+        order by m.parent_id desc
+        )
+    select
+        id, tag,
+        id_path || '/' || id as full_path,
+        tag_path || '/' || tag as full_tag_path
+    from pnts
+    ''')
+
+# -----------
+# ===========
+db.ex('select * from full_tag_paths')
+# -----------
+
+
+
+
+
+
+
+

@@ -6,7 +6,7 @@
 
 ## Design
 
-__Tags__
+### Tags
 
 * autoincrement primary key
   - autoincrement to prevent reuse of `rowids` when freed up ... which might be valuable for data integrity over the lifetime of the database, 
@@ -22,6 +22,13 @@ __Tags__
   - uses large recursive query ... could join full parent string on to tags table
     + Main purpose of this is to have a good mapping between the unique tag and a textual representation of the tag
   - As adding and removing tags will be relatively infrequent, automatically deriving full parent paths should be fine.
+* **Architecture**
+  - Initialise tags table with a single tag: `root` with parent `NULL`.
+  - `root` is the parent of all top level tags (and so used as the filter for top level tags)
+  - Create trigger on `update`, `delete` and `insert` (on tags table)
+    + trigger runs:
+      * `delete` to clear the `full_tag_paths` table
+      * `insert` on the table `full_tag_paths` using the recursive query
 
 
 _Full parent derivation_
@@ -58,7 +65,7 @@ select
 from pnts
 ```
 
-__FIles__
+### Files
 
 * Files stored fully with FTS
   - FTS on top of actual storage in a separate source table: https://kimsereylam.com/sqlite/2020/03/06/full-text-search-with-sqlite.html, https://www.sqlite.org/fts5.html#external_content_tables
@@ -107,7 +114,8 @@ __FIles__
 - [X] Create files with FTS
 - [X] Create references table
 - [X] create note-tags table
-- [ ] create tags hierarchy auto-make trigger
+- [X] create tags hierarchy auto-make trigger
+- [ ] make trigger occur on insert, update and delete
 - [ ] create assets and asset links tables
 - [ ] Add to files/notes table
 - [ ] add to references table

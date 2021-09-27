@@ -1,5 +1,6 @@
 
 from pathlib import Path
+import datetime as dt
 from typing import Optional, Iterable
 import sqlite3 as sql
 from dataclasses import dataclass
@@ -67,10 +68,6 @@ def create_tag_paths_table_trigger(db: DB):
     ...
 
 
-def create_note_tags_table():
-    ...
-
-
 # > Add to Tables
 
 def check_root_tag_unique(db: DB, tag_name: str):
@@ -100,5 +97,36 @@ def add_tag(db: DB, tag_name: str, parent_id: Optional[int] = None):
     print(output)
 
 
+def add_link(db: DB):
+    ...
 
 
+def update_links(db: DB, links):
+    # delete all links according to parent of provided links
+    # insert all links provided
+    ...
+
+
+def add_note():
+    ...
+
+
+def update_note():
+    # incorporate into add_note?
+    ...
+
+# > Note Parsing
+
+# > query notes
+
+# all notes matching any of provided tags
+
+# full text search over title or text or both
+
+# all children of current note
+
+# all 1st deg parents / children
+
+# > Fancy Functions
+
+# apply tag to all children of current note
