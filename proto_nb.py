@@ -20,9 +20,8 @@ db = db_connection(db_path, True)
 # ===========
 db_init(db)
 # -----------
-db.ex('select name from sqlite_master where type = "table"')
 # ===========
-
+db.ex('select name from sqlite_master where type = "table"')
 # -----------
 
 
@@ -366,10 +365,16 @@ db.ex('select id from tags')[0][0]
 
 # > Tags and auto parent tables
 
+# >> reset tags
 # ===========
 db.ex('drop table if exists tags')
 db.ex('drop table if exists full_tag_paths')
 # -----------
+# ===========
+db.ex('select * from tags')
+# -----------
+
+# >> add tags
 # ===========
 db.ex('''
     insert into tags(tag, parent_id) values(
@@ -391,6 +396,7 @@ db.ex('insert into tags(tag, parent_id) values("joins", 4)')
 db.ex('insert into tags(tag, parent_id) values("functions", 3)')
 # -----------
 # ===========
+# should fail with foreign key constraint
 db.ex('insert into tags(tag, parent_id) values("code", 22)')
 # -----------
 # ===========
@@ -398,6 +404,8 @@ db.ex('''
     select id from tags where tag == 'topics'
     ''')
 # -----------
+
+# >> join parents
 # ===========
 db.ex('''
     select m.id, p.tag parent, m.tag, p.id parentid
@@ -406,6 +414,8 @@ db.ex('''
     on m.parent_id = p.id
     ''')
 # -----------
+
+# >> full tag paths proto
 # ===========
 db.ex('''
     with recursive tags_parents(id, tag, parent_id, parent) as
@@ -477,6 +487,94 @@ db.ex('''
 # -----------
 # ===========
 db.ex('select * from full_tag_paths')
+# -----------
+db.cursor.description
+# ===========
+db.ex('''
+    update full_tag_paths
+        set id = id_ud, tag = tag_ud, full_path = full_path_ud, full_tag_path = full_tag_path_ud
+        from (
+            with recursive tags_parents(id, tag, parent_id, parent) as
+                (
+                select a.id, a.tag, a.parent_id, b.tag as parent
+                from tags a
+                left join tags b
+                on a.parent_id = b.id
+                ),
+            pnts(id, tag, parent_id, id_path, tag_path) as
+                (
+                select
+                    id, tag, parent_id,
+                    ifnull(parent_id, '-') as id_path, ifnull(parent, '-') as tag_path
+                from tags_parents
+                where parent_id is NULL
+                union
+                select
+                    m.id, m.tag, m.parent_id,
+                    ifnull(pnts.id_path, '-') || '/' || pnts.id as id_path,
+                    ifnull(pnts.tag_path, '-') || '/' || pnts.tag as tag_path
+                from tags_parents m
+                join pnts
+                on pnts.id = m.parent_id
+                order by m.parent_id desc
+                )
+            select
+                id as id_ud, tag as tag_ud,
+                id_path || '/' || id as full_path_ud,
+                tag_path || '/' || tag as full_tag_path_ud
+            from pnts
+            )
+        where id = id_ud
+    ''')
+# -----------
+# ===========
+db.ex('select * from full_tag_paths')
+# -----------
+# ===========
+db.ex('delete from full_tag_paths')
+# -----------
+# ===========
+db.ex('select * from full_tag_paths')
+# -----------
+# ===========
+db.ex('insert into tags(tag, parent_id) values("trigger", 4)')
+# -----------
+# ===========
+db.ex('select * from tags')
+# -----------
+# ===========
+db.ex('''
+    insert into full_tag_paths
+            with recursive tags_parents(id, tag, parent_id, parent) as
+                (
+                select a.id, a.tag, a.parent_id, b.tag as parent
+                from tags a
+                left join tags b
+                on a.parent_id = b.id
+                ),
+            pnts(id, tag, parent_id, id_path, tag_path) as
+                (
+                select
+                    id, tag, parent_id,
+                    ifnull(parent_id, '-') as id_path, ifnull(parent, '-') as tag_path
+                from tags_parents
+                where parent_id is NULL
+                union
+                select
+                    m.id, m.tag, m.parent_id,
+                    ifnull(pnts.id_path, '-') || '/' || pnts.id as id_path,
+                    ifnull(pnts.tag_path, '-') || '/' || pnts.tag as tag_path
+                from tags_parents m
+                join pnts
+                on pnts.id = m.parent_id
+                order by m.parent_id desc
+                )
+            select
+                id as id_ud, tag as tag_ud,
+                id_path || '/' || id as full_path_ud,
+                tag_path || '/' || tag as full_tag_path_ud
+            from pnts
+    ''')
 # -----------
 
 

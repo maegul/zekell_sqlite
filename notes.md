@@ -14,16 +14,16 @@
 * long form (tag + parent_id)
 * Use recursive queries to get full parent path
 * Ensure uniqueness across tag name and parent_id
-  - See https://www.sqlite.org/lang_createtable.html#uniqueconst
+  - See [SQLite Docs](https://www.sqlite.org/lang_createtable.html#uniqueconst)
   - See on conflict response: https://www.sqlite.org/lang_conflict.html
   - To get uniqueness for root tags is tricky, as NULL is always unique!
     + Need additional check
 * Use trigger to automatically create full parent string for each tag
   - uses large recursive query ... could join full parent string on to tags table
     + Main purpose of this is to have a good mapping between the unique tag and a textual representation of the tag
-  - As adding and removing tags will be relatively infrequent, automatically deriving full parent paths should be fine.
+  - As adding and removing tags will be relatively infrequent, _automatically_ deriving full parent paths should be fine.
 * **Architecture**
-  - Initialise tags table with a single tag: `root` with parent `NULL`.
+  - ?? Initialise tags table with a single tag: `root` with parent `NULL` ??.
   - `root` is the parent of all top level tags (and so used as the filter for top level tags)
   - Create trigger on `update`, `delete` and `insert` (on tags table)
     + trigger runs:
@@ -31,7 +31,8 @@
       * `insert` on the table `full_tag_paths` using the recursive query
 
 
-_Full parent derivation_
+
+#### Full parent derivation
 
 ```sql
 with recursive tags_parents(id, tag, parent_id, parent) as
@@ -64,6 +65,8 @@ select
     tag_path || '/' || tag as full_tag_path
 from pnts
 ```
+
+
 
 ### Files
 
@@ -115,7 +118,8 @@ from pnts
 - [X] Create references table
 - [X] create note-tags table
 - [X] create tags hierarchy auto-make trigger
-- [ ] make trigger occur on insert, update and delete
+- [X] make trigger occur on insert, update and delete
+- [ ] write tests for full_path_tags triggers
 - [ ] create assets and asset links tables
 - [ ] Add to files/notes table
 - [ ] add to references table

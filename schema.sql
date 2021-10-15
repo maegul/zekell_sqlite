@@ -78,7 +78,7 @@ tags (
 
 -- >> Full Paths Table
 
-create table full_tag_paths as
+create table if not exists full_tag_paths as
 with recursive tags_parents(id, tag, parent_id, parent) as
     (
     select a.id, a.tag, a.parent_id, b.tag as parent
@@ -112,42 +112,122 @@ from pnts;
 
 -- >>> Update on insert
 -- need to repeat for delete and update ...
+-- Just copy paste the recursive query from above ... sighs ... what alternatives??
 
-create trigger if not exists tag_path_update
+create trigger if not exists tag_path_update_insert
     after insert on tags
     begin
         delete from full_tag_paths;
         insert into full_tag_paths
-                with recursive tags_parents(id, tag, parent_id, parent) as
-                    (
-                    select a.id, a.tag, a.parent_id, b.tag as parent
-                    from tags a
-                    left join tags b
-                    on a.parent_id = b.id
-                    ),
-                pnts(id, tag, parent_id, id_path, tag_path) as
-                    (
-                    select
-                        id, tag, parent_id,
-                        ifnull(parent_id, '-') as id_path, ifnull(parent, '-') as tag_path
-                    from tags_parents
-                    where parent_id is NULL
-                    union
-                    select
-                        m.id, m.tag, m.parent_id,
-                        ifnull(pnts.id_path, '-') || '/' || pnts.id as id_path,
-                        ifnull(pnts.tag_path, '-') || '/' || pnts.tag as tag_path
-                    from tags_parents m
-                    join pnts
-                    on pnts.id = m.parent_id
-                    order by m.parent_id desc
-                    )
+            with recursive tags_parents(id, tag, parent_id, parent) as
+                (
+                select a.id, a.tag, a.parent_id, b.tag as parent
+                from tags a
+                left join tags b
+                on a.parent_id = b.id
+                ),
+            pnts(id, tag, parent_id, id_path, tag_path) as
+                (
                 select
-                    id as id, tag as tag,
-                    id_path || '/' || id as full_path,
-                    tag_path || '/' || tag as full_tag_path
-                from pnts;
+                    id, tag, parent_id,
+                    ifnull(parent_id, '-') as id_path, ifnull(parent, '-') as tag_path
+                from tags_parents
+                where parent_id is NULL
+                union
+                select
+                    m.id, m.tag, m.parent_id,
+                    ifnull(pnts.id_path, '-') || '/' || pnts.id as id_path,
+                    ifnull(pnts.tag_path, '-') || '/' || pnts.tag as tag_path
+                from tags_parents m
+                join pnts
+                on pnts.id = m.parent_id
+                order by m.parent_id desc
+                )
+            select
+                id as id, tag as tag,
+                id_path || '/' || id as full_path,
+                tag_path || '/' || tag as full_tag_path
+            from pnts;
     end;
+
+
+-- >>> Update on delete
+
+create trigger if not exists tag_path_update_delete
+    after delete on tags
+    begin
+        delete from full_tag_paths;
+        insert into full_tag_paths
+            with recursive tags_parents(id, tag, parent_id, parent) as
+                (
+                select a.id, a.tag, a.parent_id, b.tag as parent
+                from tags a
+                left join tags b
+                on a.parent_id = b.id
+                ),
+            pnts(id, tag, parent_id, id_path, tag_path) as
+                (
+                select
+                    id, tag, parent_id,
+                    ifnull(parent_id, '-') as id_path, ifnull(parent, '-') as tag_path
+                from tags_parents
+                where parent_id is NULL
+                union
+                select
+                    m.id, m.tag, m.parent_id,
+                    ifnull(pnts.id_path, '-') || '/' || pnts.id as id_path,
+                    ifnull(pnts.tag_path, '-') || '/' || pnts.tag as tag_path
+                from tags_parents m
+                join pnts
+                on pnts.id = m.parent_id
+                order by m.parent_id desc
+                )
+            select
+                id as id, tag as tag,
+                id_path || '/' || id as full_path,
+                tag_path || '/' || tag as full_tag_path
+            from pnts;
+    end;
+
+
+-- >>> Update on update
+
+create trigger if not exists tag_path_update_update
+    after update on tags
+    begin
+        delete from full_tag_paths;
+        insert into full_tag_paths
+            with recursive tags_parents(id, tag, parent_id, parent) as
+                (
+                select a.id, a.tag, a.parent_id, b.tag as parent
+                from tags a
+                left join tags b
+                on a.parent_id = b.id
+                ),
+            pnts(id, tag, parent_id, id_path, tag_path) as
+                (
+                select
+                    id, tag, parent_id,
+                    ifnull(parent_id, '-') as id_path, ifnull(parent, '-') as tag_path
+                from tags_parents
+                where parent_id is NULL
+                union
+                select
+                    m.id, m.tag, m.parent_id,
+                    ifnull(pnts.id_path, '-') || '/' || pnts.id as id_path,
+                    ifnull(pnts.tag_path, '-') || '/' || pnts.tag as tag_path
+                from tags_parents m
+                join pnts
+                on pnts.id = m.parent_id
+                order by m.parent_id desc
+                )
+            select
+                id as id, tag as tag,
+                id_path || '/' || id as full_path,
+                tag_path || '/' || tag as full_tag_path
+            from pnts;
+    end;
+
 
 
 
