@@ -1,6 +1,8 @@
 
-from pathlib import Path
+from collections import namedtuple
 import datetime as dt
+from pathlib import Path
+import re
 from typing import Optional, Iterable
 import sqlite3 as sql
 from dataclasses import dataclass
@@ -62,10 +64,6 @@ def db_init(db: DB):
 ##############
 
 
-def create_tag_paths_table_trigger(db: DB):
-
-    # trigger to create full tag path table on each insert, delete, update
-    ...
 
 
 # > Add to Tables
@@ -85,6 +83,7 @@ def check_root_tag_unique(db: DB, tag_name: str):
 def add_tag(db: DB, tag_name: str, parent_id: Optional[int] = None):
 
     # Manually check that root tag is unique
+    # necessary as NULL (parent of root tags) is always unique
     if not parent_id:
         check_root_tag_unique(db, tag_name)
 
@@ -116,6 +115,72 @@ def update_note():
     ...
 
 # > Note Parsing
+
+title_pattern = re.compile(r'^(\d{12,14}) (.*)')
+front_matter_pattern = re.compile(r'(?s)^---\n(.+)\n---')
+link_pattern = re.compile(r'\[(.*)\]\(\/(\d{12,14})\)')
+
+Note = namedtuple('Note', ['id', 'title', 'frontmatter', 'body', 'tags', 'links'])
+
+class NoteError(ValueError):
+    pass
+
+def parse_note(note_path: Path) -> Note:
+    """Read and parse text of a note to get all necessary data
+    """
+
+    if not note_path.exists():
+        raise NoteError('Note not found at path {}'.format(note_path))
+
+    note_name = title_pattern.search(note_path.stem)
+    if not note_name:
+        raise NoteError('Note file name ({}) not valid for note found at {}'.format(
+            note_path.stem, note_path))
+    note_id, note_title = note_name.groups()
+    with open(note_path) as f:
+        body = f.read()
+
+    # parse front matter
+    front_matter = front_matter_pattern.match(body)
+
+    if not front_matter:
+        raise NoteError('Note contains no valid front matter')
+
+    front_matter_text = front_matter.group(1)
+    metadata = {}
+    for line in front_matter_text.splitlines():
+        key, value = [token.strip() for token in line.split(':')]
+
+        if key == 'tags':
+            metadata[key] = [token.strip() for token in value.split(',')]
+        else:
+            metadata[key] = value
+
+    # will probably remove this and frontmatter exception above
+    # so that notes can not have front matter as one grows out of having tags
+    if 'tags' not in metadata:
+        raise NoteError('No tags found in note at {}'.format(note_path))
+
+    # parse links
+    links = link_pattern.findall(body)
+    # convert set back to list for cleanness downstream
+    link_ids = list(set(link[1] for link in links))
+
+    note = Note(
+        id=note_id,
+        title=note_title,
+        frontmatter=front_matter_text,
+        body=body,
+        # presumes tags always present!
+        tags=metadata['tags'],
+        links=link_ids
+        )
+
+    return note
+
+
+
+
 
 # > query notes
 

@@ -485,6 +485,8 @@ db.ex('''
     ''')
 
 # -----------
+
+# >> Test full tag paths
 # ===========
 db.ex('select * from full_tag_paths')
 # -----------
@@ -577,10 +579,108 @@ db.ex('''
     ''')
 # -----------
 
+# >> Testing full_tag_path triggers
+# ===========
+db.ex('select * from tags')
+# -----------
+# ===========
+db.ex('select * from full_tag_paths')
+# -----------
+
+# test insert trigger
+# ===========
+db.ex('insert into tags(tag, parent_id) values("triggers", 4)')
+# -----------
+# ===========
+db.ex('select * from tags')
+db.ex('select * from full_tag_paths')
+# -----------
+
+# test delete trigger
+# ===========
+# error from foreign key constraint ... ?
+db.ex('delete from tags where id = 2')
+# -----------
+# ===========
+db.ex('delete from tags where tag = "triggers"')
+# -----------
+# ===========
+db.ex('select * from tags')
+db.ex('select * from full_tag_paths')
+# -----------
+
+# test update trigger
+# ===========
+db.ex('update tags set tag = "new functions" where tag = "functions"')
+db.ex('update tags set tag = "new topics" where tag = "topics"')
+# -----------
+# ===========
+db.ex('select * from tags')
+db.ex('select * from full_tag_paths')
+# -----------
 
 
+# > Parsing notes
+# ===========
+import re
+# -----------
+# ===========
+proto_note = (
+    Path('./prototype/20200904105632 Python.mdzk')
+    .read_text()
+    )
+# -----------
+# ===========
+print(proto_note)
+# -----------
+# ===========
+front_matter_pattern = re.compile(r'(?s)^---\n(.+)\n---')
+# -----------
+# ===========
+# -----------
+# ===========
+front_matter = front_matter_pattern.match(proto_note)
+front_matter_data = front_matter.group(1)
+meta_data = {}
+for line in front_matter_data.splitlines():
+    key, value = [token.strip() for token in line.split(':')]
 
+    if key == 'tags':
+        meta_data[key] = [token.strip() for token in value.split(',')]
+    else:
+        meta_data[key] = value
 
-
-
+meta_data
+# -----------
+# ===========
+link_pattern = re.compile(r'\[(.*)\]\(\/(\d{12,14})\)')
+# -----------
+# ===========
+links = link_pattern.findall(proto_note)
+links
+# -----------
+# ===========
+link_ids = set(link[1] for link in links)
+link_ids
+# -----------
+# ===========
+note_path = Path('prototype/20200904105632 Python.mdzk')
+note = parse_note(note_path)
+# -----------
+# ===========
+note._asdict()
+# -----------
+# ===========
+db.ex('pragma table_info(notes)')
+# -----------
+# ===========
+db.ex('''
+    insert into notes(id, title, frontmatter, body, mod_time)
+    values(?, ?, ?, ?, ?)''',
+    params=[note.id, note.title, note.frontmatter, note.body, dt.datetime.utcnow().timestamp()]
+    )
+# -----------
+# ===========
+db.ex('select * from notes')
+# -----------
 

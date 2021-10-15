@@ -83,6 +83,75 @@ from pnts
   - Bibliographical citations can be added freely to any note.
   - To be more structured ... each source can get it's own note, and possibly tagged as a "source" (bigger topic of what to use tags for).  Citing a source is a link to a source note, which can also contain a general summary about the source content if desired.
 
+### Links
+
+* Stay as close to markdown syntax as possible:
+  - _eg_ [My first link](/20201016154437)
+
+```
+Here is a zettelkasten link: [My First Link](/20201016154437)
+```
+
+* Title of the note is the link title
+  - This need not match the note's actual title, as it is not static.
+  - The link title can be just for convenience within the context of the note
+  - For making new notes from links, through some hotkey, whatever title is provided will have to be used for the actual title of the newly created note.
+    + The newly created id will have to be inserted automatically
+* The URL is a forward slash (`/`) followed by the unique ID
+* This should have the following qualities:
+  - Fit's into ordinary markdown
+  - Easily detectably distinct from ordinary links
+  - Expressive
+  
+#### Regex
+
+```regex
+\[[\w ]*\]\(\/\d{12,14}\)
+```
+
+
+Or, alternatively, to allow for any characters in the title:
+
+```regex
+\[.*\]\(\/\d{12,14}\)
+```
+
+* If/when creating a new note with such syntax, the title will have to be checked to be only ASCII
+  - pretty easy in python
+
+
+### Front Matter
+
+* Written in YAML (ie, YAML front matter)
+* Pretty easy to manually parse
+* Fields:
+  - title
+  - tags
+  - _extendable in the future?_ ... really depends on the parsing
+
+
+```markdown
+---
+title: Python
+tags: tech
+---
+
+## Content Body
+
+This is a link: [Link](/20201016154437)
+```
+
+
+#### Regex
+
+```regex
+(?s)^---.*---
+```
+
+* `(?s)` Sets the _dot matches newlines_ flag (ordinarily `re.S`).
+
+
+
 ## Querying
 
 * FTS on title
@@ -119,13 +188,13 @@ from pnts
 - [X] create note-tags table
 - [X] create tags hierarchy auto-make trigger
 - [X] make trigger occur on insert, update and delete
-- [ ] write tests for full_path_tags triggers
-- [ ] create assets and asset links tables
-- [ ] Add to files/notes table
-- [ ] add to references table
-- [ ] add to note_tags table
+- [X] write tests for full_path_tags triggers
 - [ ] Parse files for metadata
   - [ ] Add to table
   - [ ] Include update and delete functionality 
+- [ ] Add to files/notes table
+- [ ] add to references table
+- [ ] add to note_tags table
+- [ ] create assets and asset links tables
 
 
