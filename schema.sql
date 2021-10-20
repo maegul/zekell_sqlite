@@ -52,13 +52,16 @@ end;
 
 create table if not exists
 note_links (
-    id interger primary key,
+    id integer primary key,
     parent_note_id integer,
     child_note_id integer,
     foreign key (parent_note_id)
         references notes (id),
     foreign key (child_note_id)
-        references notes (id)
+        references notes (id),
+    unique (
+        parent_note_id, child_note_id)
+    on conflict abort
 );
 
 
@@ -96,8 +99,8 @@ pnts(id, tag, parent_id, id_path, tag_path) as
     union
     select
         m.id, m.tag, m.parent_id,
-        ifnull(pnts.id_path, '-') || '/' || pnts.id as id_path,
-        ifnull(pnts.tag_path, '-') || '/' || pnts.tag as tag_path
+        pnts.id_path || '/' || pnts.id as id_path,
+        pnts.tag_path || '/' || pnts.tag as tag_path
     from tags_parents m
     join pnts
     on pnts.id = m.parent_id
@@ -105,8 +108,8 @@ pnts(id, tag, parent_id, id_path, tag_path) as
     )
 select
     id, tag,
-    id_path || '/' || id as full_path,
-    tag_path || '/' || tag as full_tag_path
+    ltrim(id_path || '/' || id, '-/') as full_path,
+    ltrim(tag_path || '/' || tag, '-/') as full_tag_path
 from pnts;
 
 
@@ -136,8 +139,8 @@ create trigger if not exists tag_path_update_insert
                 union
                 select
                     m.id, m.tag, m.parent_id,
-                    ifnull(pnts.id_path, '-') || '/' || pnts.id as id_path,
-                    ifnull(pnts.tag_path, '-') || '/' || pnts.tag as tag_path
+                    pnts.id_path || '/' || pnts.id as id_path,
+                    pnts.tag_path || '/' || pnts.tag as tag_path
                 from tags_parents m
                 join pnts
                 on pnts.id = m.parent_id
@@ -145,8 +148,8 @@ create trigger if not exists tag_path_update_insert
                 )
             select
                 id as id, tag as tag,
-                id_path || '/' || id as full_path,
-                tag_path || '/' || tag as full_tag_path
+                ltrim(id_path || '/' || id, '-/') as full_path,
+                ltrim(tag_path || '/' || tag, '-/') as full_tag_path
             from pnts;
     end;
 
@@ -175,8 +178,8 @@ create trigger if not exists tag_path_update_delete
                 union
                 select
                     m.id, m.tag, m.parent_id,
-                    ifnull(pnts.id_path, '-') || '/' || pnts.id as id_path,
-                    ifnull(pnts.tag_path, '-') || '/' || pnts.tag as tag_path
+                    pnts.id_path || '/' || pnts.id as id_path,
+                    pnts.tag_path || '/' || pnts.tag as tag_path
                 from tags_parents m
                 join pnts
                 on pnts.id = m.parent_id
@@ -184,8 +187,8 @@ create trigger if not exists tag_path_update_delete
                 )
             select
                 id as id, tag as tag,
-                id_path || '/' || id as full_path,
-                tag_path || '/' || tag as full_tag_path
+                ltrim(id_path || '/' || id, '-/') as full_path,
+                ltrim(tag_path || '/' || tag, '-/') as full_tag_path
             from pnts;
     end;
 
@@ -214,8 +217,8 @@ create trigger if not exists tag_path_update_update
                 union
                 select
                     m.id, m.tag, m.parent_id,
-                    ifnull(pnts.id_path, '-') || '/' || pnts.id as id_path,
-                    ifnull(pnts.tag_path, '-') || '/' || pnts.tag as tag_path
+                    pnts.id_path || '/' || pnts.id as id_path,
+                    pnts.tag_path || '/' || pnts.tag as tag_path
                 from tags_parents m
                 join pnts
                 on pnts.id = m.parent_id
@@ -223,8 +226,8 @@ create trigger if not exists tag_path_update_update
                 )
             select
                 id as id, tag as tag,
-                id_path || '/' || id as full_path,
-                tag_path || '/' || tag as full_tag_path
+                ltrim(id_path || '/' || id, '-/') as full_path,
+                ltrim(tag_path || '/' || tag, '-/') as full_tag_path
             from pnts;
     end;
 
