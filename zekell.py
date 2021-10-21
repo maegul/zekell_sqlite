@@ -8,9 +8,30 @@ import sqlite3 as sql
 from dataclasses import dataclass
 from pprint import pprint
 
+# when package, needs to be managed
 SCHEMA_PATH = Path('./schema.sql')
+NOTE_EXTENSION = '.md'
 
-# > Objects
+# need to implement some basic config reading here
+    # config name: .zekell_config
+    # location: home and/or current path (no searching up the tree)
+    # options: zk_path, alt_paths, note_extension
+    # just use python and importlib?
+
+ZK_PATH = Path('./prototype')
+
+# > Objects & Consts
+
+note_name_template = Template('$id $title').substitute
+note_file_name_template = Template('$id $title'+NOTE_EXTENSION).substitute
+
+note_name_pattern = re.compile(r'^(\d{10,14}) (.*)')
+link_pattern = re.compile(r'\[([\w\- ]*)\]\(\/(\d{10,14})\)')
+front_matter_pattern = re.compile(r'(?s)^---\n(.+)\n---')
+
+# links to notes to be created on parsing ... add later ... nice to have
+# Must have a title (at least one character) and no id, but a slash!
+# new_link_pattern = re.compile(r'\[([\w\- ]+)\]\(\/\)')
 
 
 @dataclass
