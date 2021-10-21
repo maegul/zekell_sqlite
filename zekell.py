@@ -34,15 +34,16 @@ front_matter_pattern = re.compile(r'(?s)^---\n(.+)\n---')
 # new_link_pattern = re.compile(r'\[([\w\- ]+)\]\(\/\)')
 
 
-@dataclass
 class DB:
-    conn: sql.Connection
-    cursor: sql.Cursor
+
+    def __init__(self, conn: sql.Connection, cursor: sql.Cursor):
+        self.conn = conn
+        self.cursor = cursor
 
     def ex(self, query: str, params: Optional[Iterable] = None):
         """Execute query and return fetchall and commit"""
 
-        with self.conn:
+        with self.conn:  # auto commit/rollback
             if params:
                 self.cursor.execute(query, params)
             else:
@@ -50,9 +51,43 @@ class DB:
 
             output = self.cursor.fetchall()
 
+
         return output
 
 
+# ===========
+class NoteName:
+
+    def __init__(self, id: int, title: Optional[str] = None):
+        self.id = id
+        self._title = title
+
+    @property
+    def title(self):
+        return '' if not self._title else self._title
+# -----------
+
+class Note:
+    def __init__(
+            self,
+            name: NoteName,
+            frontmatter: Optional[str] = None,
+            body: Optional[str] = None,
+            tags: Optional[list] = None,
+            links: Optional[list] = None
+            ):
+
+        self.name = name
+        self.id = name.id
+        self.title = name.title
+        self.frontmatter = frontmatter
+        self.body = body
+        self.tags: list = [] if tags is None else tags
+        self.links: list = [] if links is None else links
+
+
+class NoteError(ValueError):
+    pass
 # > Table Creation
 
 def db_connection(db_path: Path, new: bool = False) -> DB:
