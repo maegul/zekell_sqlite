@@ -67,6 +67,28 @@ from pnts
 ```
 
 
+#### Note Writing
+
+* Tags will be added to notes through YAML frontmatter
+* Comma separated tags so that can have multiple tags
+* Written as a full path (eg `python/std_lib/datetime`)
+
+* **Note -> database**
+  - tag path matched against `full_tag_paths`, which provides the actual tag id that relates directly back to the `tags` table.
+  - `note_tags` table updated with note id and tag id
+* **database -> Note**
+  - Search for a substring in all tag paths, and select manually
+  - eg: `[tag_path for tag_path in full_tag_paths if "query" in tag_path]`
+* **New tag -> database**
+  - Select parent (incl `null` for root level tag) from full_tag_paths then append new child
+  - Can do directly by parsing text directly:
+    + _presume full path!_
+    + find _longest_ already existing path in new path, _that starts at 0 in new path_
+      * What if no match?  Then every tag is new, and first is at root level ... handle in the adding stage
+    + get id of parent_path.  _If not present_, then parent_path is null
+    + Split remainder of new_path into tags
+    + For each new tag, add with previous parent as parent
+
 
 ### Files
 
@@ -119,6 +141,22 @@ Or, alternatively, to allow for any characters in the title:
 * If/when creating a new note with such syntax, the title will have to be checked to be only ASCII
   - pretty easy in python
 
+
+#### Managing new links to potentially new notes
+
+* While writing a note, two hurdles might occur
+  - Inserting a link by the id is difficult as the ID is hard to remember
+  - Inserting a link to a note you haven't created yet but want to.
+  
+* For the first problem, the only two alternatives are:
+  - Parse links with titles only and match the written title against the database.  Sounds good and easy, as titles are easier to remember, but in practice it will go wrong frequently I imagine
+  - Use an automated process (through a text editor for instance) for searching for notes and inserting appropriate links
+    + Would be good to ensure that this facility is not bound to any text editor and can be run through a CLI or web API
+
+* For the second problem, the two solutions are similar in nature to those above:
+  - Parse for links that lack an ID (_but have a title!_), and create those new notes when the note is parsed (perhaps optionally so)
+    + **I Actually like this.**  It can be a clean fallback which can be run at all times in the process of parsing notes.  Parse for `new_links`, create new notes, go back and replace new links with actual links (with ids).  **Kinda a nice to have at this pint though.**
+  - A quick automated process for creating a new note from some easily selectable text (again, inside a text editor but should not be bound to the text editor's API)
 
 ### Front Matter
 
@@ -179,6 +217,87 @@ This is a link: [Link](/20201016154437)
         - _But ... how have unique combinations of arbitrary length?_
       * 
 
+## Config
+
+* Use python files (**why not!**)
+  - **Actually, probably better to use `INI` files** as supported by the [standard library](https://docs.python.org/3/library/configparser.html)
+* Use python import machinery to load an arbitrary file (see code below)
+* Have up to three locations for a config file:
+  - Package default file loaded as the fallback
+  - Home directory
+  - Current working directory (??)
+    + not sure worth it
+    + Idea would be to have locally independent working spaces defined by local config files
+* Options
+  - zk_path: path of database/filebase (`zekellbase`)
+  - alt_paths: support multiple zekellbases (_nice to have really!_)
+    + paths and names
+    + currently selected zekellbase for all commands to run against
+
+### Example Code
+
+```python
+import importlib
+import importlib.machinery
+import importlib.util
+
+# provide absolute path of config
+loader = importlib.machinery.SourceFileLoader(
+    'test', '/Users/errollloyd/Developer/zekell/.zekell_config')
+spec = importlib.util.spec_from_loader(loader.name, loader)
+mod = importlib.util.module_from_spec(spec)
+loader.exec_module(mod)
+# mod.VARIABLE
+```
+
+## Cleaning
+
+* To ensure consistency between the file-base and the database, a few batch functions will probably be necessary at some point
+  - Check all notes in the database correspond to all files in the file-base
+  - Add all files note in the database
+  - Remove all files not in the database
+
+## Updating Links
+
+* To update links:
+  - driven by notes, and therefore from files (_for now_).
+  - do a full refresh of all links from note:
+    + delete all with current note as parent
+    + add links in current note
+  - _update `db.ex()` function_ to allow batch statements so that the initial removal is rolled back should anything go wrong with the insert
+
+## Updating Tags
+
+* To update note_tags:
+  - same as for links
+* To update tags:
+  - _Tricky!_
+  - this is to update the _names_ or even the _parent(s)_ of the tags which are already assigned to a note.
+    + For tags not assigned to a note, essentially a simple update
+  - to change the name of a tag would require updating the text of every note, _reliably_.
+    + update the tag column in tags
+    + using regular expressions `re.sub()`, iterate through every note with specific tag in note_tags, find tag in frontmatter, and replace with new tag.
+    + As the ids of the tag and notes stay the same, nothing else needs to be changed
+  - to change the parent tag of a tag (ie, to move to a new parent)
+    + it means whole path will change
+    + old parent will stay in tact (removal of that would be another process)
+    + create new tag under desired parent
+    + as above, go through all necessary notes to change the note path of the original tag text in the frontmatter
+  - To change any/all component of a tag's path
+    + chain the processes above together essentially
+    + create new tag as one would create a new tag path
+    + iterate through all old notes and substitute old text with new
+  - **The central challenge is relaibly substituting the old text in the frontmatter with the new tag path**
+    + Engineering the regular expression will be important but doable
+    + enabling a note backup and rollback process is probably a good idea.
+  
+
+## Deleting Tags
+
+* Simple remove, conditional on whether any rows in `note_tags` containing the tag
+  - Perhaps a fancy function at some point that will automatically remove such tags from the text of notes
+
+
 # Tasks
 
 - [X] Move all creation SQL code to `schema.sql`
@@ -189,12 +308,17 @@ This is a link: [Link](/20201016154437)
 - [X] create tags hierarchy auto-make trigger
 - [X] make trigger occur on insert, update and delete
 - [X] write tests for full_path_tags triggers
-- [ ] Parse files for metadata
-  - [ ] Add to table
-  - [ ] Include update and delete functionality 
-- [ ] Add to files/notes table
+- [X] Parse files for metadata
+  - [X] Add to table
+  - [X] Include update and delete functionality 
+- [X] Add to files/notes table
+- [X] **Sort out SQL commit and close workflow!!**
+  * Just commit on all calls to `ex()`?
+    - *Yea ... this ... already done with context manager*
+  * Or, something more sophisticated?
+- [X] add to note_tags table
+- [ ] Use proper updating code for tags and links 
 - [ ] add to references table
-- [ ] add to note_tags table
 - [ ] create assets and asset links tables
 
 

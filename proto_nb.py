@@ -429,14 +429,15 @@ db.ex('''
         (
         select
             id, tag, parent_id,
-            ifnull(parent_id, '-') as id_path, ifnull(parent, '-') as tag_path
+            ifnull(parent_id, '-') as id_path,
+            ifnull(parent, '-') as tag_path
         from tags_parents
         where parent_id is NULL
         union
         select
             m.id, m.tag, m.parent_id,
-            ifnull(pnts.id_path, '-') || '/' || pnts.id as id_path,
-            ifnull(pnts.tag_path, '-') || '/' || pnts.tag as tag_path
+            pnts.id_path || '/' || pnts.id as id_path,
+            pnts.tag_path || '/' || pnts.tag as tag_path
         from tags_parents m
         join pnts
         on pnts.id = m.parent_id
@@ -444,8 +445,8 @@ db.ex('''
         )
     select
         id, tag,
-        id_path || '/' || id as full_path,
-        tag_path || '/' || tag as full_tag_path
+        ltrim(id_path || '/' || id, '-/') as full_path,
+        ltrim(tag_path || '/' || tag, '-/') as full_tag_path
     from pnts
     ''')
 
@@ -683,4 +684,234 @@ db.ex('''
 # ===========
 db.ex('select * from notes')
 # -----------
+
+# > Adding Notes
+# ===========
+db.ex('select * from notes')
+# -----------
+# ===========
+make_new_note(db, 'first_note')
+# -----------
+# ===========
+db.ex('select * from notes')
+# -----------
+# ===========
+ls ./prototype
+# -----------
+# ===========
+make_new_note(db, '')
+# -----------
+# ===========
+ls ./prototype
+# -----------
+# ===========
+update_note(db, Path('prototype/20211019103824 first_note.md'))
+# -----------
+# ===========
+db.ex('select * from notes')
+# -----------
+# ===========
+delete_note(db, Path('prototype/20211019103824 first_note.md'))
+# -----------
+
+
+# >> Adding LInks
+
+# Unique links?
+# ===========
+make_new_note(db, 'first')
+# -----------
+# ===========
+make_new_note(db, 'second')
+make_new_note(db, 'third')
+make_new_note(db, 'fourth')
+# -----------
+# ===========
+db.ex('select * from notes')
+# -----------
+# ===========
+db.ex('select * from note_links')
+# -----------
+# ===========
+db.ex(
+    'insert into note_links(parent_note_id, child_note_id) values(?, ?)',
+    [20211020035331, 20211020035334])
+db.ex(
+    'insert into note_links(parent_note_id, child_note_id) values(?, ?)',
+    [20211020035331, 20211020035334])
+# -----------
+# ===========
+# duplicates!?
+db.ex('select * from note_links')
+# -----------
+# ===========
+# ignore uniqueness constraing error and skip
+db.ex(
+    'insert or ignore into note_links(parent_note_id, child_note_id) values(?, ?)',
+    [20211020035331, 20211020035334])
+# -----------
+# ===========
+# BUT ... doesn't ignore foreign key constraints
+db.ex(
+    'insert or ignore into note_links(parent_note_id, child_note_id) values(?, ?)',
+    [20211020035331, 123123123123])
+# -----------
+
+# >> Update note with links
+# ===========
+db.ex('select * from note_links')
+# -----------
+# ===========
+note_path = Path('prototype/20211020035335 fourth.md')
+update_note(db, note_path)
+# -----------
+# ===========
+db.ex('select * from notes')
+# -----------
+# ===========
+db.ex('select * from note_links')
+# -----------
+# ===========
+parse_note_body(note_path.read_text())
+# -----------
+note_path.read_text()
+# ===========
+link_pattern.findall(note_path.read_text())
+# -----------
+
+# >> Adding Tags
+# ===========
+# get list of paths
+paths = [
+t[0] for t in
+db.ex('select full_tag_path from full_tag_paths')
+]
+paths
+# -----------
+# ===========
+paths = ['test',
+ 'topics',
+ 'topics/code',
+ 'topics/code/functions',
+ 'topics/sql',
+ 'topics/sql/joins']
+# -----------
+# ===========
+new_path = 'topics/sql/recursive/theory'
+# -----------
+# ===========
+tag_path_pattern = re.compile(r'[a-zA-Z_][a-zA-Z_\/]*[a-zA-Z_]')
+
+def is_valid_tag_path(tag_path: str):
+    return tag_path_pattern.fullmatch(tag_path)
+
+def check_valid_tag_path(tag_path: str):
+    if not is_valid_tag_path(tag_path):
+        raise NoteError('tag path ({}) is not valid (must fullmatch with {})'.format(
+            tag_path, tag_path_pattern.pattern))
+
+
+def get_tag_id(db: DB, tag: str, parent_id: Optional[int]) -> int:
+
+    # sqlite: "is" works with null, "=" doesn't
+    result = db.ex(
+        'select id from tags where tag = ? and parent_id is ?',
+        [tag, parent_id]
+        )
+
+    return result[0][0]
+
+
+def get_tag_path_id(db: DB, tag_path: str) -> int:
+
+    check_valid_tag_path(tag_path)
+
+    result = db.ex(
+        'select id from full_tag_paths where full_tag_path = ?',
+        [tag_path])
+
+    return result[0][0]
+
+
+def get_all_full_tag_path(db: DB) -> list:
+    paths = [
+        tp[0] for tp
+        in db.ex('select full_tag_path from full_tag_paths')
+    ]
+
+    return paths
+# -----------
+
+# ===========
+def add_new_tag_path(db: DB, new_tag_path: str):
+
+    check_valid_tag_path(new_tag_path)
+
+    paths = get_all_full_tag_path(db)
+
+    new_path_parents = [  # get longest match from all tag_paths
+        tag_path for tag_path
+        in paths
+        if tag_path in new_tag_path
+        ]
+
+    if new_tag_path in paths:
+        # shouldn't happen, but just in case
+        return
+
+    new_path_parent = max(new_path_parents, default=None)
+
+    # no match or match does not start from beginning or is not SUB-string (ie too long)
+    # then new path is all new tags
+    if not new_path_parent or not (new_tag_path.find(new_path_parent) == 0):
+        new_path_parent_id = None
+        # whole path is new!
+        new_tags = new_tag_path.split('/')
+    else:
+        new_path_parent_id = get_tag_path_id(db, new_path_parent)
+        # get list of new tags that need to be added with new_path_parent at root
+        new_tags = new_tag_path[len(new_path_parent)+1:].split('/')
+
+    for new_tag in new_tags:
+        add_tag(db, new_tag, parent_id = new_path_parent_id)
+        new_id = get_tag_id(db, new_tag, parent_id=new_path_parent_id)
+        # now use new tag as parent id for the next
+        new_path_parent_id = new_id
+
+    # return id of new tag
+
+    return new_id
+
+# -----------
+db.ex('select * from tags')
+db.ex('select * from full_tag_paths')
+# ===========
+add_new_tag_path(db, 'test/path/new')
+# -----------
+# ===========
+add_new_tag_path(db, 'convenience/notes/tags/paths')
+# -----------
+# ===========
+new_path_parent = max([
+    tag_path for tag_path in paths
+    if tag_path in new_path
+])
+new_path_parent
+# -----------
+# ===========
+assert new_path.find(new_path_parent) == 0, 'not full path'
+# -----------
+# ===========
+new_path_parent_id = db.ex(
+    'select id from full_tag_paths where full_tag_path = ?',
+    [new_path_parent])[0][0]
+# -----------
+# ===========
+# plus one to omit the slash
+new_tags = new_path[len(new_path_parent)+1:].split('/')
+new_tags
+# -----------
+
+
+
 
