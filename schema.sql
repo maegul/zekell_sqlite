@@ -71,7 +71,8 @@ create table if not exists
 tags (
     id integer primary key autoincrement,
     tag text,
-    parent_id text,
+    parent_id integer,
+    check (tag != ''),
     foreign key (parent_id) references tags (id),
     unique (
         tag, parent_id
