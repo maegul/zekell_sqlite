@@ -623,6 +623,16 @@ def update_note(db: DB, note_path: Path):
     update_note_tags(db, note.id, new_tag_paths)
 
 
+def add_old_note(db, note_path: Path):
+
+    note = parse_note(note_path)
+
+    if not is_note_id_unique(db, note.id):
+        raise NoteError('old note id {} is not unique (note_path: {})'.format(
+            note.id, note_path))
+
+    db.ex('insert into notes(id, title) values(?, ?)', [note.id, note.title])
+    update_note(db, note_path)
 
 
 def delete_note(db: DB, note_path: Path):
