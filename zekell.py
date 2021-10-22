@@ -38,16 +38,76 @@ class DB:
         self.conn = conn
         self.cursor = cursor
 
-    def ex(self, query: str, params: Optional[Iterable] = None):
-        """Execute query and return fetchall and commit"""
+    def ex(
+            self, query: Union[str, list, tuple],
+            params: Optional[Union[list, tuple]] = None):
+        """Execute query and return fetchall and commit
 
-        with self.conn:  # auto commit/rollback
-            if params:
-                self.cursor.execute(query, params)
+        If query is a list (of queries/statements), then they will be run as a batch
+        with `commit` being run only after all have been executed.
+
+        Passing params along with a list of queries/statements requires params to be
+        a list/tuple of lists/tuples, with the inner lists/tuples containing the params
+        for each query.
+
+        If params are None, no params are used for a list of queries
+        If one of the elements in the outer list of params is None, then no params are used
+        for the corresponding query
+
+        Examples
+        --------
+        >>> db.ex('select * from notes')
+        >>> db.ex('select * from notes where id = ?', [123])
+        >>> db.ex('select * from note_links where parent_id = ? and child_id = ?', [123, 789])
+        >>> db.ex(
+            [
+            'select * from notes',
+            'select * from notes where id = ? or id = ?'],
+            [
+            None,
+            [123, 456]
+            ]
+        )
+        """
+
+        if isinstance(query, (list, tuple)):
+            # check that arguments appropriate for batch operation
+            if not (
+                    (
+                        isinstance(params, (list, tuple))
+                        and
+                        all(isinstance(p, (list, tuple)) for p in params)
+                        and
+                        (len(query) == len(params))
+                    )
+                    or
+                    isinstance(query, (list, tuple))
+                    ):
+                raise ValueError(
+                    '''If running batch, query must be list of queries and,
+                    if provided, params a list of lists of parameters,
+                    with the outer list with the same length as the query list'''
+                    )
             else:
-                self.cursor.execute(query)
+                if params is None:
+                    params = [None for _ in query]
+                with self.conn:  # auto commit/rollback
+                    for q, p in zip(query, params):
+                        if p:
+                            self.cursor.execute(q, p)
+                        else:
+                            self.cursor.execute(q)
 
-            output = self.cursor.fetchall()
+                    output = self.cursor.fetchall()
+
+        else:  # if not batch
+            with self.conn:  # auto commit/rollback
+                if params:
+                    self.cursor.execute(query, params)
+                else:
+                    self.cursor.execute(query)
+
+                output = self.cursor.fetchall()
 
 
         return output
@@ -239,6 +299,35 @@ def add_note_link(db: DB, parent_id: int, child_id: int):
             child_id, parent_id))
 
 
+def update_note_links(
+        db: DB, parent_id: int,
+        child_ids: Union[int, list, tuple]):
+
+
+    # rewrite db.ex to not do batch but instead have a flag for whether to commit
+    # that way, can manually hold multiple queries until the end, then commit
+    # should be more flexible
+
+    # or not ...
+
+    delete_stmt = '''delete from note_links where parent_note_id = ?'''
+    insert_stmt = '''
+        insert or ignore
+        into note_links(parent_note_id, child_note_id)
+        values(?, ?)'''
+
+    if isinstance(child_ids, (list, tuple)):
+        db.ex(
+            query = [
+                delete_stmt,
+                *[insert_stmt for _ in child_ids]],
+            params = [
+                [parent_id],
+                *[(parent_id, child_id) for child_id in child_ids] ]
+            )
+
+
+
 # >> Tags
 
 def check_root_tag_unique(db: DB, tag_name: str):
@@ -309,7 +398,7 @@ def add_tag(
     values(?, ?)
     """
 
-    db.ex(query, (tag, parent_id))
+    db.ex(query, [tag, parent_id])
 
 
 
@@ -467,13 +556,11 @@ def update_note(db: DB, note_path: Path):
         [note.title, note.frontmatter, note.body, make_mod_time(), note.id]
         )
 
-    # LINKS
-    for link in note.links:
-        # will fail on any single nonexistant child id
-        # may update this logic here to avoid such annoying occurances (see notes)
-        add_note_link(db, note.id, link)
+    update_note_links(db, note.id, note.links)
 
     # Tags
+    # can roll up into a generalised update function?
+    # or good to keep tag update function simple and leave management here ... ?
     for tag_path in note.tags:
         check_valid_tag_path(tag_path)
         tag_paths = get_all_full_tag_path(db)
@@ -484,7 +571,7 @@ def update_note(db: DB, note_path: Path):
             if tag_id is None:
                 raise NoteError('Failed to add new tag ({})'.format(tag_path))
 
-        add_note_tag(db, note.id, get_tag_path_id(db, tag_path))
+        add_note_tag(db, note.id, tag_id)
 
 
 
