@@ -76,7 +76,11 @@ class DB:
                     (
                         isinstance(params, (list, tuple))
                         and
-                        all(isinstance(p, (list, tuple)) for p in params)
+                        all(
+                            isinstance(
+                                p, (list, tuple, type(None)))
+                            for p in params
+                            )
                         and
                         (len(query) == len(params))
                     )
@@ -325,7 +329,15 @@ def update_note_links(
                 [parent_id],
                 *[(parent_id, child_id) for child_id in child_ids] ]
             )
-
+    else:
+        db.ex(
+            query=[
+                delete_stmt,
+                insert_stmt],
+            params = [
+                [parent_id],
+                [parent_id, child_ids]]
+            )
 
 
 # >> Tags
@@ -399,7 +411,6 @@ def add_tag(
     """
 
     db.ex(query, [tag, parent_id])
-
 
 
 def add_new_tag_path(db: DB, new_tag_path: str):
