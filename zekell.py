@@ -466,6 +466,35 @@ def add_note_tag(db, note_id: int, tag_id: int):
         )
 
 
+def update_note_tags(db, note_id: int, tag_ids: Union[int, list, tuple]):
+
+
+    delete_stmt = '''delete from note_tags where note_id = ?'''
+    insert_stmt = '''
+        insert into note_tags(note_id, tag_id)
+        values(?, ?)'''
+
+    if isinstance(tag_ids, (list, tuple)):
+        db.ex(
+            query = [
+                delete_stmt,
+                *[insert_stmt for _ in tag_ids]],
+            params = [
+                [note_id],
+                *[(note_id, tag_id) for tag_id in tag_ids]]
+            )
+    else:
+        db.ex(
+            query = [
+                delete_stmt,
+                insert_stmt],
+            params = [
+                [note_id],
+                [note_id, tag_ids]]
+            )
+
+
+
 # >> Parsing notes
 
 
@@ -492,7 +521,13 @@ def parse_note_body(body: str) -> Tuple[str, list, list]:
 
             if key == 'tags':
                 # ensure no repeat tags ... convert back to list for cleanness downstream
-                metadata[key] = list(set([token.strip() for token in value.split(',')]))
+                tags = list(
+                    set([token.strip() for token in value.split(',')])
+                    )
+                for tag in tags:
+                    # catch invalid tags early
+                    check_valid_tag_path(tag)
+                metadata[key] = tags
             else:
                 metadata[key] = value
 
@@ -563,7 +598,7 @@ def update_note(db: DB, note_path: Path):
             frontmatter = ?,
             body = ?,
             mod_time = ?
-        where id = ? ''',
+        where id = ?''',
         [note.title, note.frontmatter, note.body, make_mod_time(), note.id]
         )
 
@@ -572,9 +607,10 @@ def update_note(db: DB, note_path: Path):
     # Tags
     # can roll up into a generalised update function?
     # or good to keep tag update function simple and leave management here ... ?
+    tag_paths = get_all_full_tag_path(db)
+    new_tag_paths = []
     for tag_path in note.tags:
         check_valid_tag_path(tag_path)
-        tag_paths = get_all_full_tag_path(db)
         if tag_path in tag_paths:
             tag_id = get_tag_path_id(db, tag_path)
         else:
@@ -582,7 +618,9 @@ def update_note(db: DB, note_path: Path):
             if tag_id is None:
                 raise NoteError('Failed to add new tag ({})'.format(tag_path))
 
-        add_note_tag(db, note.id, tag_id)
+        new_tag_paths.append(tag_id)
+        # add_note_tag(db, note.id, tag_id)
+    update_note_tags(db, note.id, new_tag_paths)
 
 
 
