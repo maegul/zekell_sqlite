@@ -11,6 +11,17 @@ notes (
     mod_time text
 );
 
+-- Notes added but not yet properly updated
+create table if not exists
+staged_notes (
+    id integer primary key,
+    title text,
+    note_path text,
+    add_time text
+);
+
+-- Full Text Search over notes
+
 create virtual table if not exists
 notes_fts using fts5(
     title,

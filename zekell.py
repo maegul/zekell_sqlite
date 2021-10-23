@@ -1,4 +1,9 @@
+#! /usr/bin/env python3
+
+from pprint import pprint
+from argparse import ArgumentParser
 import datetime as dt
+import json
 from string import Template
 from pathlib import Path
 import re
@@ -8,15 +13,43 @@ import sqlite3 as sql
 
 # when package, needs to be managed
 SCHEMA_PATH = Path('./schema.sql')
-NOTE_EXTENSION = '.md'
 
-# need to implement some basic config reading here
-    # config name: .zekell_config
-    # location: home and/or current path (no searching up the tree)
-    # options: zk_path, alt_paths, note_extension
-    # just use python and importlib?
+# > Config
 
-ZK_PATH = Path('./prototype')
+default_config = {
+    "zk_paths": {
+        "main": "~/zekell"
+    },
+    "current_zk_path": "main",
+    "note_extension": ".md"
+}
+
+default_config_path = Path('~/.zekell_config').expanduser()
+
+def write_default_config(output_path: Path = default_config_path):
+
+    output_path.touch(exist_ok=True)
+    output_path.write_text(
+        json.dumps(default_config))
+
+def get_config():
+    if not default_config_path.exists():
+        return default_config
+    else:
+        return json.loads(default_config_path.read_text())
+
+config = get_config()
+
+# >> Set global consts from config
+
+# MAIN ONE IS ZK_PATH ... how to deal with path depends on how this library is called
+# probably best to contextualise the path at calling before passing note_path variables
+# down to functions
+
+NOTE_EXTENSION = config['note_extension']
+ZK_PATH = Path(config['zk_paths'][config['current_zk_path']]).expanduser()
+ZK_DB = Path('zekell.db')
+ZK_DB_PATH = ZK_PATH / ZK_DB
 
 # > Objects & Consts
 
@@ -117,7 +150,6 @@ class DB:
         return output
 
 
-# ===========
 class NoteName:
 
     def __init__(self, id: int, title: Optional[str] = None):
@@ -127,7 +159,6 @@ class NoteName:
     @property
     def title(self):
         return '' if not self._title else self._title
-# -----------
 
 class Note:
     def __init__(
@@ -156,7 +187,9 @@ class NoteError(ValueError):
 def db_connection(db_path: Path, new: bool = False) -> DB:
 
     if not db_path.exists() and not new:
-        raise ValueError('Db Path does not exist')
+        raise ValueError('Db Path exists already!')
+    elif new:
+        db_path.touch()
 
     conn = sql.connect(db_path)
     cursor = conn.cursor()
@@ -581,7 +614,14 @@ def make_new_note(db: DB, title: Optional[str] = None):
         db.ex('insert into notes(id, title) values(?, ?)', [new_id, title])
 
     note_name = NoteName(new_id, title)
-    (ZK_PATH / Path(make_note_file_name(note_name))).touch(exist_ok=False)
+    note_path = (ZK_PATH / Path(make_note_file_name(note_name)))
+    note_path.touch(exist_ok=False)
+
+    # add entry in staged table
+    db.ex('insert into staged_notes(id, title, note_path, add_time) values(?,?,?,?)',
+        [note_name.id, note_name.title, note_path.as_posix(), make_mod_time()])
+
+    return note_path
 
 
 def update_note(db: DB, note_path: Path):
@@ -622,6 +662,9 @@ def update_note(db: DB, note_path: Path):
         # add_note_tag(db, note.id, tag_id)
     update_note_tags(db, note.id, new_tag_paths)
 
+    # remove from staging
+    db.ex('delete from staged_notes where id = ?', [note.id])
+
 
 def add_old_note(db, note_path: Path):
 
@@ -634,31 +677,33 @@ def add_old_note(db, note_path: Path):
     db.ex('insert into notes(id, title) values(?, ?)', [note.id, note.title])
     update_note(db, note_path)
 
+    # BIG ISSUE Here with note_links and the foreign key constraint
+    # if adding notes one at a time, a link is likely to be to a note not yet added
+    # and can be unresolvable adding only one note at a time
+    # BETTER to batch add all the notes into the notes table only, then update
+    # keep a list of failed notes to report at the end
+
 
 def delete_note(db: DB, note_path: Path):
     "delete note from db and file"
 
 
-    note_name = parse_note_name(note_path)
-    db.ex('''
-        delete from notes
-        where id = ? ''', [note_name.id])
+    # note_name = parse_note_name(note_path)
+    note = parse_note(note_path)
+    db.ex(
+        [
+            'delete from notes where id = ?',
+            'delete from note_links where parent_note_id = ?',
+            'delete from note_tags where note_id = ?'
+        ],
+        [
+            [note.id],
+            [note.id],
+            [note.id]
+        ]
+        )
 
     note_path.unlink()
-
-
-
-# >> Links
-
-
-def update_links(db: DB, links):
-    # delete all links according to parent of provided links
-    # insert all links provided
-    ...
-
-
-
-
 
 
 
@@ -676,3 +721,146 @@ def update_links(db: DB, links):
 # > Fancy Functions
 
 # apply tag to all children of current note
+
+
+# > CLI
+
+def cli_config(args):
+
+    if args.print:
+        pprint(config)
+        print('Config file at {} exists: {}'.format(
+            default_config_path, default_config_path.exists()))
+
+    if args.init:
+        write_default_config()
+        print('Written config file to {}'.format(default_config_path))
+
+
+def cli_init(args):
+
+    db_path = ZK_PATH/ZK_DB
+
+    if args.print:
+        print('Zekell initialised at {} with DataBase: {}'.format(
+                ZK_PATH, (ZK_PATH.exists(), db_path.exists())
+            ))
+        if db_path.exists():
+            print('Database path: {}'.format(db_path))
+
+    else:
+        if db_path.exists():
+            print('Zekell already exists at {}'.format(db_path))
+            db = db_connection(db_path)
+        else:
+            ZK_PATH.mkdir(exist_ok=True)
+            db = db_connection(db_path, new=True)
+            print('Created Zekell at {} and Database at {}'.format(
+                ZK_PATH, db_path))
+
+        db_init(db)
+        print('Zekell Database schema initialised')
+
+        print('\nTables:')
+        print(
+           '\n'.join([
+                r[0] for r in
+                db.ex('select name from sqlite_master where type = "table"')
+            ])
+            )
+        print('\nNumber of notes: {}'.format(
+            db.ex('select count(*) from notes')[0][0])
+        )
+
+
+def cli_add(args):
+
+    db = db_connection(ZK_DB_PATH)
+    note_path = make_new_note(db, args.title)
+
+
+    print(note_path)
+
+
+def cli_query(args):
+
+    query = 'select {} limit {}'.format(args.query, args.limit)
+    db = db_connection(ZK_DB_PATH)
+    result = db.ex(query)
+
+    print(' '.join([c[0] for c in db.cursor.description]))
+    for row in result:
+        print(' '.join([str(v) for v in row]))
+
+
+def main():
+    parser = ArgumentParser(
+        description="Zekell CLI"
+        )
+
+    subparsers = parser.add_subparsers(
+        dest='sub_command', title='Sub Commands')
+
+    # >> Config
+
+    ap_config = subparsers.add_parser('config', description='Configuration')
+    ap_config.add_argument('-p', '--print',
+        action='store_true',
+        help="Print current config and setup")
+    ap_config.add_argument('--init',
+        action='store_true',
+        help="Create default config file to allow user customisation")
+
+    # >> Initialisation
+
+    ap_init = subparsers.add_parser('init', description='Initialisation',
+        help="Initialise your Zekell")
+    ap_init.add_argument('-p', '--print',
+        action='store_true',
+        help='Print current state for initialisation')
+
+    # >> Locate
+
+    _ = subparsers.add_parser('locate', description='Locate',
+        help="Locate current Zekell, print path")
+
+    # >> Add New Note
+
+    ap_add = subparsers.add_parser('add', description='Add New Note',
+        help='Add a new note')
+    ap_add.add_argument('-t', '--title',
+        help="Title of the new note",
+        )
+
+
+    # >> Run Query
+
+    ap_query = subparsers.add_parser('q', description='Run Query',
+        help='Run a query against the database')
+    ap_query.add_argument('query',
+        help='Query to run, will be automatically preceded by "select "')
+    ap_query.add_argument('--limit',
+        help='Number to limit return by (default 100)',
+        default = 100)
+
+
+    args = parser.parse_args()
+
+    if args.sub_command == 'config':
+        cli_config(args)
+    elif args.sub_command == 'init':
+        cli_init(args)
+    elif args.sub_command == 'locate':
+        if ZK_PATH.exists():
+            print(ZK_PATH)
+        else:
+            print('Zekell not initialised at configured path: {}, try init'.format(
+                ZK_PATH))
+    elif args.sub_command == 'add':
+        cli_add(args)
+    elif args.sub_command == 'q':
+        cli_query(args)
+
+if __name__ == '__main__':
+    main()
+
