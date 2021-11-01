@@ -317,8 +317,29 @@ loader.exec_module(mod)
     - *Yea ... this ... already done with context manager*
   * Or, something more sophisticated?
 - [X] add to note_tags table
-- [ ] Use proper updating code for tags and links 
+- [X] Use proper updating code for tags and links
+  - [X] Add batch statements in db.ex()
+  - [X] Update links instead of merely adding
+  - [X] update note_tags instead of merely adding
+- [X] Enable adding whole note from scratch
+- [ ] Enable configuration for locating database etc
+- [ ] Utility function for batch update of database from notes
+* [ ] Delete notes
+  * [ ] Remove links
++ [ ] Delete Tags
+  * Only if not used in any notes!
 - [ ] add to references table
 - [ ] create assets and asset links tables
+
+* [ ] Create CLI
+  * General a CRUD interface on notes and tags + querying
+
+* [ ] Create query functions/API
+  * [ ] 
+
+
+* [X] Change modified time column to float (?)
+  * Idea is to enable easier sorting in the database?
+  * but sqlite seems quite happy to sort text.  In fact, it seems faster compared to sorting floats, which makes some sense as floating point might introduce some problems. ... **Note done, left as text!!**
 
 

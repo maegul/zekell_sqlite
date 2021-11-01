@@ -20,7 +20,7 @@ staged_notes (
     add_time text
 );
 
--- Full Text Search over notes
+-- >> Full Text Search over notes
 
 create virtual table if not exists
 notes_fts using fts5(

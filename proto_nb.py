@@ -24,7 +24,34 @@ db_init(db)
 db.ex('select name from sqlite_master where type = "table"')
 # -----------
 
-
+# >> Testing Batch ex
+# ===========
+db.ex([
+    '''insert into tags(tag, parent_id) values('test', NULL )''',
+    'insert into tags(tag, parent_id) values("topics", NULL)',
+    ])
+# -----------
+# ===========
+db.ex([
+    'insert into tags(tag, parent_id) values("code", 2)',
+    'insert into tags(tag, parent_id) values("sql", 2)',
+    'insert into tags(tag, parent_id) values("joins", 4)',
+    'insert into tags(tag, parent_id) values("functions", 3)'
+    ])
+# -----------
+# ===========
+db.ex('insert into tags(tag, parent_id) values("rollbacktest", 2)')
+# -----------
+# ===========
+db.ex([
+    'insert into tags(tag, parent_id) values("rollbacktest2", 2)',
+    'insert into tags(tag, parent_id) values("anothertest", 4)',
+    'insert into tags(tag, parent_id) values("functions", 3)'
+    ])
+# -----------
+# ===========
+db.ex('select * from tags')
+# -----------
 # cols: id, title, metadata, body, m-date
 # ===========
 import datetime as dt
@@ -705,7 +732,10 @@ make_new_note(db, '')
 ls ./prototype
 # -----------
 # ===========
-update_note(db, Path('prototype/20211019103824 first_note.md'))
+new_note_path = Path('prototype/20211022003326 first_note.md')
+# -----------
+# ===========
+update_note(db, new_note_path)
 # -----------
 # ===========
 db.ex('select * from notes')
@@ -762,7 +792,7 @@ db.ex(
 db.ex('select * from note_links')
 # -----------
 # ===========
-note_path = Path('prototype/20211020035335 fourth.md')
+note_path = Path('prototype/20211022010525 first.md')
 update_note(db, note_path)
 # -----------
 # ===========
@@ -844,6 +874,11 @@ def get_all_full_tag_path(db: DB) -> list:
 
 # ===========
 def add_new_tag_path(db: DB, new_tag_path: str):
+    """Add tags necessary for new_tag_path to refer to an extant tag
+
+    return None if necessary tags already exist
+    return id of newly created tag (leaf) if new tag(s) created
+    """
 
     check_valid_tag_path(new_tag_path)
 
@@ -889,7 +924,10 @@ db.ex('select * from full_tag_paths')
 add_new_tag_path(db, 'test/path/new')
 # -----------
 # ===========
-add_new_tag_path(db, 'convenience/notes/tags/paths')
+add_new_tag_path(db, 'convenience/notes/tags/paths/new')
+# -----------
+# ===========
+add_new_tag_path(db, 'notes/tags/paths/new')
 # -----------
 # ===========
 new_path_parent = max([
@@ -913,5 +951,258 @@ new_tags
 # -----------
 
 
+# > Sorting mod times
+# ===========
+import datetime as dt
+# -----------
+# ===========
+now_ts = dt.datetime.utcnow().timestamp()
+# -----------
+# ===========
+db.ex('drop table dt_test')
+# -----------
+# ===========
+db.ex('create table dt_test(dti integer, dtn real, dtt text)')
+# -----------
+# ===========
+n = range(1000)
+qs = ['insert into dt_test(dti, dtn, dtt) values(?,?,?)' for _ in n]
+params = [(int(now_ts + i), float(now_ts + i), str(now_ts + i)) for i in n]
+
+db.ex(qs, params)
+# -----------
+# ===========
+o = db.ex('select * from dt_test')
+# -----------
+o[0]
+# ===========
+%timeit o = db.ex('select * from dt_test order by dti desc')
+# -----------
+# ===========
+%timeit o = db.ex('select * from dt_test order by dtn desc')
+# -----------
+# ===========
+%timeit o = db.ex('select * from dt_test order by dtt desc')
+# -----------
+dt.datetime.utco[0]
 
 
+# > Create Dummy Random Testing zekell
+# ie, with notes and all
+
+# make necessary data, create notes, and batch upload
+# ===========
+import random
+import string
+
+n_notes = 300
+new_id = make_new_note_id()
+ids = [new_id + n for n in range(n_notes)]
+
+front_matter_template = '''---
+tags: {}
+---
+'''.format
+
+punctuation_replace = str.maketrans({p: '' for p in string.punctuation + string.whitespace[1:]})
+
+# alice = Path('/Data/alice_in_wonderland.txt').read_text()
+alice = Path('./alice_in_wonderland.txt').read_text()  # presume in main zekell dir
+lines = alice.splitlines()
+words = [word for word in alice.translate(punctuation_replace).split(' ') if word and word != ' ']
+
+tags = random.sample(words, 15)
+
+mk_tags = lambda: ','.join(random.sample(tags, random.choice(range(1, 4))))
+mk_front_matter = lambda: front_matter_template(mk_tags())
+mk_text = lambda: '\n'.join(random.sample(lines, 20))
+mk_link = lambda: f'[{"".join(random.sample(string.ascii_lowercase, 7))}](/{random.choice(ids)})'
+mk_title = lambda: (' '.join(random.sample(words, random.randint(1, 5))))
+
+def mk_note_text():
+    text = mk_text()
+    n_chars = len(text)-1
+    n_links = random.randint(0, 10)
+    link_locations = [0] + sorted(random.sample(range(n_chars), n_links)) + [len(text)]
+    link_location_slices = list(zip(link_locations, link_locations[1:]))
+    new_text = ''.join(
+        text[a:b] + mk_link()
+        for a, b in link_location_slices)
+
+    return new_text
+
+def mk_new_note(id):
+
+    title = mk_title()
+    front_matter = mk_front_matter()
+    text = mk_note_text()
+
+    new_note_path = Path(f'{id} {title}.md')
+    note_body = front_matter + text
+
+    new_note_path.write_text(note_body)
+
+# -----------
+# ===========
+cd dummy_proto
+# -----------
+# ===========
+# make sure in appropriate directory!
+for new_id in ids:
+    if new_id % 50 == 0:
+        print(new_id)
+    mk_new_note(new_id)
+# -----------
+# ===========
+db_path = Path('test.db')
+# -----------
+# ===========
+db_path.unlink()
+# -----------
+# ===========
+db = db_connection(db_path, True)
+# -----------
+
+# >> Files table with FTS
+# ===========
+db_init(db)
+# -----------
+# ===========
+db.ex('select name from sqlite_master where type = "table"')
+# -----------
+# ===========
+note_paths = list(Path('.').glob('*.md'))
+# -----------
+# ===========
+add_batch_old_note(db, note_paths)
+db.ex('select * from notes limit 2')
+db.ex('select * from note_links limit 2')
+db.ex('select * from full_tag_paths')
+# -----------
+
+# >> Query Prototyping
+
+# >>> Get database
+# ===========
+cd dummy_proto
+db = db_connection(Path('test.db'))
+# -----------
+# ===========
+db.ex('select count(*) from notes')
+# -----------
+
+# >>> All notes with particular tag
+# ===========
+db.ex('select * from full_tag_paths')
+# -----------
+# ===========
+db.ex('select * from note_tags limit 15')
+# -----------
+# ===========
+# all note_ids with tag id
+tag_id = 8
+o = db.ex('select note_id from note_tags where tag_id = ?', [tag_id])
+len(o)
+o[:10]
+# -----------
+# ===========
+# note ids and titles
+o = db.ex('''
+    select note_id, notes.title from note_tags
+    left join notes
+    on notes.id = note_tags.note_id
+    where tag_id = ?
+    ''',
+    [8])
+o[:10]
+# -----------
+
+# >>> All notes that are direct children of particular note
+# ===========
+o = db.ex('select * from note_links')
+o[:10]
+# -----------
+# ===========
+# random note id
+note_id = db.ex(
+    'select id from notes where id in (select id from notes order by random() limit 1)'
+    )[0][0]
+note_id
+# -----------
+# ===========
+o = db.ex('select child_note_id from note_links where parent_note_id = ?', [note_id])
+o[:10]
+# -----------
+
+# >>> All children of a set of parents
+# ===========
+note_ids = [n[0] for n in o]
+# sooo ... this isn't a thing ... can't just pass a list
+# or anything other than a basic type (eg int or string)
+o = db.ex('select child_note_id from note_links where parent_note_id in ?',[note_ids])
+# -----------
+# ===========
+mk_iter_arg = lambda args: f"({','.join('?' for _ in args)})"
+o = db.ex(
+    f'select child_note_id from note_links where parent_note_id in {mk_iter_arg(note_ids)}',
+    note_ids)
+len(o)
+# -----------
+
+# This really gets into recursive queries
+# One may wish to get all children notes that are n levels deep in the query
+
+
+# >>> All parents of a note
+
+# ===========
+# random note id
+note_id = db.ex(
+    'select id from notes where id in (select id from notes order by random() limit 1)'
+    )[0][0]
+note_id
+# -----------
+# ===========
+o = db.ex('select parent_note-id from note_links where child_note_id = ?', [note_id])
+o[:10], len(o)
+# -----------
+
+# again, recursion may make sense here at some point
+
+
+
+# >>> Full Text Search
+
+# ===========
+# match against title col
+o = db.ex('select rowid, title from notes_fts where title match "alice"')
+o[:10], len(o)
+# -----------
+# ===========
+# match any col (?)
+o = db.ex('select rowid, title from notes_fts where notes_fts match "alice"')
+o[:10], len(o)
+# -----------
+# ===========
+o = db.ex('select rowid, title from notes_fts where notes_fts match "hookah"')
+o[:10], len(o)
+# -----------
+# ===========
+o = db.ex('select rowid, title from notes_fts where notes_fts match "hookah alice"')
+o[:10], len(o)
+# -----------
+# ===========
+o = db.ex('''
+    select rowid, title, snippet(notes_fts, -1, "**>", "<**", "...", 10)
+    from notes_fts where title match "hookah"
+    ''')
+o[:10], len(o)
+# -----------
+# ===========
+# two word phrase with wild card
+o = db.ex('''
+    select rowid, snippet(notes_fts, -1, "**>", "<**", "...", 10)
+    from notes_fts where title match "hookah + and*"
+    ''')
+o[:10], len(o)
+# -----------

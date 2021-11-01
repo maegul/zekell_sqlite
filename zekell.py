@@ -12,7 +12,8 @@ from typing import Optional, Iterable, Tuple, Union, overload
 import sqlite3 as sql
 
 # when package, needs to be managed
-SCHEMA_PATH = Path('./schema.sql')
+# SCHEMA_PATH = Path('./schema.sql')
+SCHEMA_PATH = Path(__file__).parent / Path('./schema.sql')
 
 # > Config
 
@@ -682,6 +683,33 @@ def add_old_note(db, note_path: Path):
     # and can be unresolvable adding only one note at a time
     # BETTER to batch add all the notes into the notes table only, then update
     # keep a list of failed notes to report at the end
+
+
+def add_batch_old_note(db, note_paths: list):
+
+    failed_notes = []
+    for note_path in note_paths:
+        note = parse_note(note_path)
+
+        if not is_note_id_unique(db, note.id):
+            raise NoteError('old note id {} is not unique (note_path: {})'.format(
+                note.id, note_path))
+
+        try:
+            db.ex('insert into notes(id, title) values(?, ?)', [note.id, note.title])
+        except Exception:
+            failed_notes.append(note_path)
+
+    failed_notes = set(failed_notes)
+    update_fails = []
+    for note_path in note_paths:
+        if note_path not in failed_notes:
+            try:
+                update_note(db, note_path)
+            except Exception:
+                update_fails.append(note_path)
+
+    return failed_notes, update_fails
 
 
 def delete_note(db: DB, note_path: Path):
