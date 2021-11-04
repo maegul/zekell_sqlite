@@ -330,12 +330,36 @@ loader.exec_module(mod)
   * Only if not used in any notes!
 - [ ] add to references table
 - [ ] create assets and asset links tables
+- [ ] Look into adding indices for columns likely to be used heavily in queries
+  * Eg, parent and child note ids in `note_links`.
+  * See [sqlite docs on query planning and indices](https://www.sqlite.org/queryplanner.html)
+  * 
 
 * [ ] Create CLI
   * General a CRUD interface on notes and tags + querying
 
+* [ ] Can update `full tag path` triggers to use a single CTE?
+ * write the CTE once, and refer back to it in each trigger _!!?_
 * [ ] Create query functions/API
-  * [ ] 
+  * [ ] Create a super master query that automatically joins multiple optional queries together
+    * Maybe use multiple CTEs for each component, then join them all together at the end on a commonly named `note_ids` column (??)
+    * In combining the components of this query, there will be active and passive filtering
+      - Eg: all notes that are children of note X, or all notes that are children of the notes from the previous component ... how to string all of this together?  _best approach is probably to put together various specific queries that are obviously useful, to get a feel for how it can all be put together_
+      - Well, _passive_ filtering is done just by joining (kinda easy).  Ordinarily, active filtering would involve a `WHERE` within a subquery or CTE.
+
+* [ ] Allow for fuzzy search over note ids??
+  * Idea is to be like git SHAs ... allow using the first 6 digits of a note to search for a ntoe
+  * 6 digits is pretty easy for short term memory ... essentially Hour:Minute:second, and will most likely be unique or close to
+    - 12 hours (working time) * 60 minutes * 60 seconds ~ 40_000
+  * Probably create another FTS column for the row id?
+  * Actually, this works already with basic `lik %TOKEN%` syntax **!!!**:
+  
+  ```sql
+  select id from notes where id like "%83006%"
+  -- returns (20211031083006)
+  ```
+
+* [ ] Add run_log for all tables for version control and viable sync options
 
 
 * [X] Change modified time column to float (?)

@@ -1206,3 +1206,37 @@ o = db.ex('''
     ''')
 o[:10], len(o)
 # -----------
+
+
+# >>> Compete (super) query
+# ===========
+db.ex('select * from full_tag_paths')
+# -----------
+# ===========
+db.ex('select id from full_tag_paths where full_tag_path = "terms"')
+# -----------
+# ===========
+db.ex('select note_id from note_tags where tag_id = 12')
+# -----------
+# ===========
+
+# -----------
+# Maybe CTEs are the answer!?
+# One CTE for each potential component of the super query ... ?
+# ===========
+q = '''
+with tagged_notes(note_id) as (
+    select note_id from note_tags as p
+    where tag_id = (
+        select id from full_tag_paths where full_tag_path = "terms"
+        )
+    )
+select parent_note_id from note_links
+left join tagged_notes
+on tagged_notes.note_id = note_links.child_note_id
+'''
+db.ex(q)
+# -----------
+# ===========
+db.ex('select * from note_links where parent_note_id = 20211031083275')
+# -----------
