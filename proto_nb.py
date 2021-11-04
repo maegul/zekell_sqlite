@@ -1223,6 +1223,7 @@ db.ex('select note_id from note_tags where tag_id = 12')
 # -----------
 # Maybe CTEs are the answer!?
 # One CTE for each potential component of the super query ... ?
+# join for AND, and Union for OR (in terms of combining multiple queries)
 # ===========
 q = '''
 with tagged_notes(note_id) as (
@@ -1231,9 +1232,28 @@ with tagged_notes(note_id) as (
         select id from full_tag_paths where full_tag_path = "terms"
         )
     )
-select parent_note_id from note_links
+select distinct parent_note_id from note_links
 left join tagged_notes
 on tagged_notes.note_id = note_links.child_note_id
+'''
+db.ex(q)
+# -----------
+# ===========
+# all children of all notes tagged "terms"
+q = '''
+with tagged_notes(note_id) as (
+    select note_id from note_tags as p
+    where tag_id = (
+        select id from full_tag_paths where full_tag_path = "terms"
+        )
+    ),
+parent_notes(note_id, child_note_id) as (
+    select parent_note_id, child_note_id from note_links
+    where parent_note_id like "%83231%"
+)
+select distinct parent_notes.note_id
+from tagged_notes left join parent_notes
+    on tagged_notes.note_id = parent_notes.note_id
 '''
 db.ex(q)
 # -----------
