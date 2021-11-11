@@ -1141,6 +1141,7 @@ note_ids = [n[0] for n in o]
 # or anything other than a basic type (eg int or string)
 o = db.ex('select child_note_id from note_links where parent_note_id in ?',[note_ids])
 # -----------
+# iter args
 # ===========
 mk_iter_arg = lambda args: f"({','.join('?' for _ in args)})"
 o = db.ex(
@@ -1148,6 +1149,7 @@ o = db.ex(
     note_ids)
 len(o)
 # -----------
+mk_iter_arg(['hello', 'world'])
 
 # This really gets into recursive queries
 # One may wish to get all children notes that are n levels deep in the query
@@ -1241,7 +1243,8 @@ db.ex(q)
 # ===========
 # all children of all notes tagged "terms"
 q = '''
-with tagged_notes(note_id) as (
+with
+tagged_notes(note_id) as (
     select note_id from note_tags as p
     where tag_id = (
         select id from full_tag_paths where full_tag_path = "terms"
@@ -1249,7 +1252,6 @@ with tagged_notes(note_id) as (
     ),
 parent_notes(note_id, child_note_id) as (
     select parent_note_id, child_note_id from note_links
-    where parent_note_id like "%83231%"
 )
 select distinct parent_notes.note_id
 from tagged_notes left join parent_notes
@@ -1259,4 +1261,437 @@ db.ex(q)
 # -----------
 # ===========
 db.ex('select * from note_links where parent_note_id = 20211031083275')
+# -----------
+# ===========
+# >>>> tag_cte
+# can get more complex with and/or with multiple tags
+tag_cte = '''
+tagged_notes(note_id) as (
+    select note_id from note_tags
+    where tag_id = (
+        select id from full_tag_paths where full_tag_path = "{}"
+    )
+)
+'''.format
+# -----------
+# ===========
+# >>>> child_cte
+child_cte = '''
+child_notes(note_id) as (
+    select child_note_id from note_links
+    where parent_note_id = "{}"
+)
+'''.format
+# -----------
+# >>>> FTS Play
+# ===========
+db.ex('select rowid,title from notes_fts where title match "alice"')
+# boolean operators are case sensitive
+db.ex('select title from notes_fts where title match "hookah OR alice"')
+# implict AND
+db.ex('select title from notes_fts where title match "guests alice"')
+# wild card
+db.ex('select title from notes_fts where title match "gue* alice"')
+# parens
+db.ex('select title from notes_fts where notes_fts match "title : alice AND (old OR gues*)"')
+# highligh aux function
+db.ex('select highlight(notes_fts, 0, \'>>\', \'<<\') from notes_fts where title match "alice AND (old OR gues*)"')
+# -----------
+# ===========
+# near function and phrases
+# implicit AND on multiple terms! (kinda like fuzzy find)
+db.ex('select title, bm25(notes_fts) from notes_fts where title match "alice a"')
+# a single phrase
+db.ex('select title from notes_fts where title match "alice + a"')
+# near function and distance
+db.ex('select title from notes_fts where title match "NEAR(alice a, 2)"')
+# only adjacents found
+db.ex('select title from notes_fts where title match "NEAR(alice a, 1)"')
+# -----------
+# ===========
+# bm25 ... not the same as fuzzy find though
+db.ex('''
+    select highlight(notes_fts, 0, \'>>\', \'<<\'),
+    highlight(notes_fts, 1, \'>>\', \'<<\'),
+    bm25(notes_fts)
+    from notes_fts
+    where notes_fts match "alice sister"
+    order by bm25(notes_fts)
+    ''')
+# -----------
+# ===========
+# >>>> title_cte
+title_cte = '''
+title_notes(note_id) as (
+    select rowid from notes_fts
+    where title match "{}"
+)
+'''.format
+# -----------
+# ===========
+# testing title_cte
+db.ex(f'''with {title_cte('alice')} select * from title_notes''')
+db.ex(f'''with {title_cte('alice a')} select * from title_notes''')
+db.ex(f'''with {title_cte('alice in*')} select * from title_notes''')
+db.ex(f'''with {title_cte('alice AND (in* OR beg*)')} select * from title_notes''')
+# -----------
+# ===========
+q = f'''
+    with {tag_cte('terms')}
+    select * from tagged_notes
+    '''
+db.ex(q)
+# -----------
+# ===========
+db.ex(f'''
+    with {child_cte(20211031083010)}
+    select * from child_notes
+    ''')
+# -----------
+# ===========
+# tags of children of parent
+db.ex(f'''
+    with {child_cte(20211031083010)}
+    select tags.tag
+    from child_notes
+    left join note_tags on note_tags.note_id = child_notes.note_id
+    left join tags on note_tags.tag_id = tags.id
+    '''
+    )
+
+# -----------
+# ===========
+# all notes children of 20211031083010 AND tagged "she"
+db.ex(f'''
+    with
+    {child_cte(20211031083010)},
+    {tag_cte('she')}
+    select a.note_id
+    from child_notes a
+    inner join tagged_notes b
+        on a.note_id = b.note_id
+    ''')
+# -----------
+# ===========
+db.ex('''
+    select notes.title from note_tags
+    inner join notes on note_tags.note_id = notes.id
+    where tag_id = 10
+    limit 50
+    ''')
+
+# -----------
+# ===========
+# notes with alice in title and tag she
+# could be faster with note_tags indexed??
+db.ex(f'''
+    with
+    {title_cte('alice')},
+    {tag_cte('she')}
+    select z.id, z.title
+    from title_notes a
+    inner join tagged_notes b
+        on a.note_id = b.note_id
+    inner join notes z
+        on b.note_id = z.id
+    ''')
+# -----------
+# ===========
+# children of notes with alice in title
+# not quite simple here ... how generalise simple joins like this ...?
+# the "children of" part really is just "children of" ... so maybe pretty simple in the end
+# and similarly for "parents of"
+db.ex(f'''
+    with
+    {title_cte('alice')}
+    select b.child_note_id
+    from title_notes a
+    inner join note_links b
+        on a.note_id = b.parent_note_id
+    ''')
+# -----------
+# ===========
+# CHILDREN OF notes with alice in title and tag she
+# adaptation of above
+# how handle ad hoc column names for note_links and join on notes z (child_note_id)?
+    # I guess just handle the ad hoc nature of prefixing with "parent_/child_"
+db.ex(f'''
+    with
+    {title_cte('alice')},
+    {tag_cte('she')}
+    select z.title, z.id
+    from title_notes a
+    inner join tagged_notes b
+        on a.note_id = b.note_id
+    inner join note_links x
+        on b.note_id = x.parent_note_id
+    inner join notes z
+        on x.child_note_id = z.id
+    ''')
+# -----------
+db.cursor.description
+
+# >>>> Complex Tag queries play
+# ===========
+db.ex('select * from note_tags limit 20')
+# -----------
+# ===========
+db.ex('select note_id, count(tag_id) from note_tags group by note_id')
+# -----------
+db.ex('select * from tags')
+# ===========
+# AND
+# count = 2 must match number of tags using
+# must get ids as well
+db.ex('''
+    select note_id, count(*)
+    from note_tags
+    where tag_id in (7, 11)
+    group by note_id
+    having count(note_id) = 2
+    ''')
+# -----------
+# ===========
+# subquery for getting id by tag_path
+db.ex('''
+    select note_id, count(*)
+    from note_tags
+    where tag_id in (
+        select id from full_tag_paths where full_tag_path in ("offer", "might")
+    )
+    group by note_id
+    having count(note_id) = 2
+    ''')
+# -----------
+# ===========
+# XOR
+# count = 1 means only one
+db.ex('''
+    select note_id, count(*)
+    from note_tags
+    where tag_id in (7, 11)
+    group by note_id
+    having count(note_id) = 1
+    ''')
+# -----------
+# ===========
+# OR
+# no count means any number match
+db.ex('''
+    select note_id, count(*)
+    from note_tags
+    where tag_id in (7, 11)
+    group by note_id
+    ''')
+# -----------
+# >>>> And tag cte
+ts = "offer might"
+tuple(ts.split(' '))
+ts = "offer, might"
+tuple(t.strip() for t in ts.split(','))
+# ===========
+def tag_and_cte(tags: str):
+    tags_tuple = tuple(tags.split(' '))
+    cte = f'''
+    tagged_notes(note_id) as (
+        select note_id
+        from note_tags
+        where tag_id in (
+            select id from full_tag_paths where full_tag_path in {tags_tuple}
+        )
+        group by note_id
+        having count(note_id) = {len(tags_tuple)}
+    )
+    '''
+    return cte
+# -----------
+# >>>> Or tag cte
+# ===========
+def tag_or_cte(tags: str):
+    tags_tuple = tuple(t.strip() for t in tags.split(','))
+    cte = f'''
+    tagged_notes(note_id) as (
+        select note_id
+        from note_tags
+        where tag_id in (
+            select id from full_tag_paths where full_tag_path in {tags_tuple}
+        )
+        group by note_id
+    )
+    '''
+    return cte
+# -----------
+# ===========
+db.ex(f'''
+    with
+    {tag_and_cte('offer might')}
+    select * from tagged_notes
+    ''')
+# -----------
+# ===========
+db.ex(f'''
+    with
+    {tag_or_cte('offer, might')}
+    select * from tagged_notes
+    ''')
+# -----------
+
+# >>>> query DSL
+
+# CTE componets
+# ===========
+from textwrap import dedent
+
+tag_cte = '''
+tagged_notes(note_id) as (
+    select note_id from note_tags
+    where tag_id = (
+        select id from full_tag_paths where full_tag_path = "{}"
+    )
+)
+'''.format
+
+title_cte = '''
+title_notes(note_id) as (
+    select rowid from notes_fts
+    where title match "{}"
+)
+'''.format
+
+body_cte = '''
+body_notes(note_id) as (
+    select rowid from notes_fts
+    where body match "{}"
+)
+'''.format
+
+child_cte = '''
+child_notes(note_id) as (
+    select child_note_id from note_links
+    where parent_note_id = "{}"
+)
+'''.format
+
+def tag_or_cte(tags: str):
+    tags_tuple = tuple(t.strip() for t in tags.split(','))
+    cte = f'''
+    tagged_or_notes(note_id) as (
+        select note_id
+        from note_tags
+        where tag_id in (
+            select id from full_tag_paths where full_tag_path in {tags_tuple}
+        )
+        group by note_id
+    )
+    '''
+    return dedent(cte)
+
+def tag_and_cte(tags: str):
+    tags_tuple = tuple(t.strip() for t in tags.split(' '))
+    cte = f'''
+    tagged_and_notes(note_id) as (
+        select note_id
+        from note_tags
+        where tag_id in (
+            select id from full_tag_paths where full_tag_path in {tags_tuple}
+        )
+        group by note_id
+        having count(note_id) = {len(tags_tuple)}
+    )
+    '''
+    return dedent(cte)
+
+# def tag_wrapper(tags: str):
+
+# -----------
+# ===========
+cte_map = {
+    'title': title_cte,
+    'body': body_cte,
+    'child': child_cte,
+    'tag': tag_cte,
+    'tag_or': tag_or_cte,
+    'tag_and': tag_and_cte
+}
+
+cte_table_name_map = {
+    'title': 'title_notes',
+    'body': 'body_notes',
+    'child': 'child_notes',
+    'tag': 'tagged_notes',
+    'tag_or': 'tagged_or_notes',
+    'tag_and': 'tagged_and_notes'
+}
+
+def query_tag_redirect(parsed_q: dict):
+
+    tag_query = parsed_q.get('tag')
+    if tag_query is None:  # no need for redirect, no tag component
+        return parsed_q
+
+    if tag_query.find(',') != -1:  # first, as spaces found with commas
+        parsed_q['tag_or'] = parsed_q['tag']
+        del parsed_q['tag']
+    elif tag_query.find(' ') != -1:
+        parsed_q['tag_and'] = parsed_q['tag']
+        del parsed_q['tag']
+
+    return parsed_q
+# -----------
+# ===========
+import string
+cte_aliases = list(string.ascii_lowercase)
+
+def mk_super_query(q: str, notes_cols = None):
+
+    parsed_q = dict([
+        [ssq.strip() for ssq in sq.strip().split(':')]
+        for sq in q.split(';')
+    ])
+    parsed_q = query_tag_redirect(parsed_q)
+
+    sq = 'with' + ','.join(cte_map[k](v) for k,v in parsed_q.items())
+    if not notes_cols:
+        notes_cols = ['id']
+    selection_cols = f"select {','.join(f'z.{col}' for col in notes_cols)}\n"
+    sq += selection_cols
+
+    for i, k in enumerate(parsed_q.keys()):
+        alias = cte_aliases[i]
+        prev_alias = cte_aliases[i-1]
+        if i == 0:
+            sq += f"from {cte_table_name_map[k]} {alias}\n"
+        else:
+            sq += f"inner join {cte_table_name_map[k]} {alias} on {prev_alias}.note_id = {alias}.note_id\n"
+    sq += f"inner join notes z on {alias}.note_id = z.id"
+
+    return sq
+# -----------
+# ===========
+db.ex(mk_super_query('body: alice; tag: she; title: about', ['id', 'title']))
+# -----------
+
+# implicit and in above ... how or (using outer join?)
+# not the highest priority
+
+# > Fuzzy note id
+
+# ===========
+db.ex('select id from notes limit 10')
+# -----------
+# ===========
+db.ex('select id from notes where id like ("%" || ?)', [83015])
+# -----------
+# ===========
+def get_note_ids_from_fuzzy_id(db: DB, fuzzy_id: int):
+
+    note_ids = db.ex('select id, title from notes where id like ("%" || ?)', [fuzzy_id])
+    return note_ids
+# -----------
+# ===========
+note_cands = get_note_ids_from_fuzzy_id(db, 83015)
+if len(note_cands) > 1:
+    display_rows(db, note_cands)
+else:
+    note_path = make_note_file_name(NoteName(*note_cands[0]))
 # -----------

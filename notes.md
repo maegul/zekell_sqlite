@@ -324,6 +324,10 @@ loader.exec_module(mod)
 - [X] Enable adding whole note from scratch
 - [ ] Enable configuration for locating database etc
 - [ ] Utility function for batch update of database from notes
+  - [X] add file to database
+  - [X] batch add multiple files to database (taking care of linking issues)
+  - [ ] find all files ahead of database (using mod time and os modtime?)
+  - [ ] batch add all files ahead of database
 * [ ] Delete notes
   * [ ] Remove links
 + [ ] Delete Tags
@@ -333,26 +337,53 @@ loader.exec_module(mod)
 - [ ] Look into adding indices for columns likely to be used heavily in queries
   * Eg, parent and child note ids in `note_links`.
   * See [sqlite docs on query planning and indices](https://www.sqlite.org/queryplanner.html)
-  * 
+  * Whereever `UNIQUE` constraints are applied an index is effectively created (see [docs on create table](https://www.sqlite.org/lang_createtable.html#unique_constraints)).
+    - So ... **only the `note_tags` table would need an index**... or unique constraint on both columns
+    
+* [ ] Add unique constraint on `note_tags`
+  * Makes sense to ensure uniqueness here
+  * Should create an index that should make queries faster
 
 * [ ] Create CLI
   * General a CRUD interface on notes and tags + querying
+  * [X] Add sql command for straight sql
+  * [X] add custom query command for custom short hand queries
+  * [X] Add update specific note/file command
+- [X] Wrap functionality around note staging (mostly CLI)
+  * Stage note when opened through CLI so that can be readily updated once edited by external app
+  * List all staged notes
+  * Batch update all staged notes
+    - Check ones have actually been updated?? (too much effort really)
+  * mainly for editing notes purely through CLI
 
 * [ ] Can update `full tag path` triggers to use a single CTE?
  * write the CTE once, and refer back to it in each trigger _!!?_
 * [ ] Create query functions/API
-  * [ ] Create a super master query that automatically joins multiple optional queries together
+  * [X] Create a super master query that automatically joins multiple optional queries together
     * Maybe use multiple CTEs for each component, then join them all together at the end on a commonly named `note_ids` column (??)
     * In combining the components of this query, there will be active and passive filtering
       - Eg: all notes that are children of note X, or all notes that are children of the notes from the previous component ... how to string all of this together?  _best approach is probably to put together various specific queries that are obviously useful, to get a feel for how it can all be put together_
       - Well, _passive_ filtering is done just by joining (kinda easy).  Ordinarily, active filtering would involve a `WHERE` within a subquery or CTE.
+  * [ ] Allow for simple _children of_ and _parents of_ passive components
+  * [ ] Allow for OR between components (using `outer join` rather than `inner join`)
+  * [ ] Allow for complex tag queries
+    - boolean operations on multiple tags
+    - **Perhaps the [toxi](http://howto.philippkeller.com/2005/04/24/Tags-Database-schemas/) scheme is not appropriate for this?**  It's possible, but perhaps to combersome especially if trying to integrate it with other query components.
+    - Maybe just using FTS, with a single `tags` column, with space separated tags and slashes (`/`) for hierarchy, would work better for querying?
+      + Harder to query _what are all the tags in the database_ then ... so maybe both?
+      + To remove the slash (`/`) from token separators see [docs on unicode tokenizer options](https://www.sqlite.org/fts5.html#unicode61_tokenizer) where characters can be added to the set of token and separator characters.  With this, whitespace would be used to separate tags and slashes would be retained as part of a single token.
+      + Boolean queries would become simpler, using `sql` booleans on `like "%TAG%"` statements (see [examples in this blog post](http://howto.philippkeller.com/2005/04/24/Tags-Database-schemas/))
+  * [ ] Querying all children (at all levels) of a note (or even set of notes)
+    * [ ] Need a recursive CTE
+      * Can limit the number of levels?  Could be useful to do so only to 5 levels or so so that the number of notes doesn't explode?
+      * How handle cycles?
 
-* [ ] Allow for fuzzy search over note ids??
+* [X] Allow for fuzzy search over note ids??
   * Idea is to be like git SHAs ... allow using the first 6 digits of a note to search for a ntoe
   * 6 digits is pretty easy for short term memory ... essentially Hour:Minute:second, and will most likely be unique or close to
     - 12 hours (working time) * 60 minutes * 60 seconds ~ 40_000
   * Probably create another FTS column for the row id?
-  * Actually, this works already with basic `lik %TOKEN%` syntax **!!!**:
+  * Actually, this works already with basic `like %TOKEN%` syntax **!!!**:
   
   ```sql
   select id from notes where id like "%83006%"
@@ -360,7 +391,16 @@ loader.exec_module(mod)
   ```
 
 * [ ] Add run_log for all tables for version control and viable sync options
+* [ ] Having running `last_mod_time` for whole database
+  * update with triggers or use python?  (_probably triggers!_)
+  * Could maybe just use the run_log?  _Probably not efficient!_
+    - _Generally philosophy with this database is make reading fast and writing slow (indices, unique constraints, triggers, etc)._
 
+* [ ] Create a web API interface
+  * could become primary means of interaction
+    - run always in background
+    - allow for WAL and multiple connections, which requires another pragma ([see documentation](https://www.sqlite.org/wal.html))
+    - requires either hacking the stdlib (too much) or using bottle (minimal)
 
 * [X] Change modified time column to float (?)
   * Idea is to enable easier sorting in the database?
