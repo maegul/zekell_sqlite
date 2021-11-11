@@ -1,12 +1,16 @@
 #! /usr/bin/env python3
 
 from pprint import pprint
+import string
+from textwrap import dedent
 from argparse import ArgumentParser
 import datetime as dt
+import copy
 import json
 from string import Template
 from pathlib import Path
 import re
+import subprocess
 # 3.5+ then!
 from typing import Optional, Iterable, Tuple, Union, overload
 import sqlite3 as sql
@@ -22,7 +26,9 @@ default_config = {
         "main": "~/zekell"
     },
     "current_zk_path": "main",
-    "note_extension": ".md"
+    "note_extension": ".md",
+    # "editor_shell_command": "vim, {}"
+    "editor_shell_command": "subl, -n, {}"
 }
 
 default_config_path = Path('~/.zekell_config').expanduser()
@@ -37,7 +43,13 @@ def get_config():
     if not default_config_path.exists():
         return default_config
     else:
-        return json.loads(default_config_path.read_text())
+        base_config = copy.deepcopy(default_config)
+
+        base_config.update(
+            json.loads(
+                default_config_path.read_text()))
+
+        return base_config
 
 config = get_config()
 
@@ -598,6 +610,15 @@ def parse_note(note_path: Path) -> Note:
     return note
 
 
+def stage_note(db: DB, note_path: Path):
+    "Add a note to the staging table"
+
+    note_name = parse_note_name(note_path)
+
+    db.ex('insert or ignore into staged_notes(id, title, note_path, add_time) values(?,?,?,?)',
+        [note_name.id, note_name.title, note_path.as_posix(), make_mod_time()])
+
+
 def make_new_note(db: DB, title: Optional[str] = None):
     """Create a new note with ID formed by current time and provided title
 
@@ -619,8 +640,10 @@ def make_new_note(db: DB, title: Optional[str] = None):
     note_path.touch(exist_ok=False)
 
     # add entry in staged table
-    db.ex('insert into staged_notes(id, title, note_path, add_time) values(?,?,?,?)',
-        [note_name.id, note_name.title, note_path.as_posix(), make_mod_time()])
+    stage_note(db, note_path)
+    # db.ex('insert into staged_notes(id, title, note_path, add_time) values(?,?,?,?)',
+    #     [note_name.id, note_name.title, note_path.as_posix(), make_mod_time()])
+
 
     return note_path
 
@@ -734,17 +757,233 @@ def delete_note(db: DB, note_path: Path):
     note_path.unlink()
 
 
+# >> Staging and Opening Notes
+
+def open_note(db: DB, note_path: Path):
+    open_note_command = [
+        element.strip()
+        for element in
+            config['editor_shell_command']
+            .format(note_path)
+            .split(',')
+        ]
+
+    _ = subprocess.call(open_note_command)
+
+    stage_note(db, note_path)
+
+
 
 
 # > query notes
 
-# all notes matching any of provided tags
+# >> Fuzzy id
 
-# full text search over title or text or both
+def get_note_ids_from_fuzzy_id(db: DB, fuzzy_id: int) -> Optional[Union[list, Path]]:
 
-# all children of current note
+    note_cands = db.ex('select id, title from notes where id like ("%" || ?)', [fuzzy_id])
 
-# all 1st deg parents / children
+    if not note_cands:
+        return
+    elif len(note_cands) > 1:
+        return note_cands
+    else:
+        note_path = ZK_PATH / Path(make_note_file_name(NoteName(*note_cands[0])))
+        return note_path
+
+# >> CTEs
+
+def id_cte(note_id: int):
+    "CTE for selecting notes by tail of note_id"
+
+    id_cte = f'''
+    id_notes(note_id) as (
+        select id from notes
+        where id like "%{note_id}"
+    )
+    '''
+    return dedent(id_cte)
+
+def tag_cte(tag: str):
+    "CTE for select note_ids with a single tag"
+
+    tag_cte = f'''
+    tagged_notes(note_id) as (
+        select note_id from note_tags
+        where tag_id = (
+            select id from full_tag_paths where full_tag_path = "{tag}"
+        )
+    )
+    '''
+
+    return dedent(tag_cte)
+
+def title_cte(phrase: str):
+    '''
+    CTE for selecting note_ids of all notes with matching FTS phrase in title
+
+    phrase formats include:
+    "token1 token2" (implicit AND)
+    "token1 + token2" (single search term ... concatenated into single)
+    "(token1 AND token2) OR token3" (booleans with operators in caps and parens for order)
+    '''
+
+    title_cte = f'''
+    title_notes(note_id) as (
+        select rowid from notes_fts
+        where title match "{phrase}"
+    )
+    '''
+    return dedent(title_cte)
+
+def body_cte(phrase: str):
+    '''
+    CTE for selecting note_ids of all notes with matching FTS phrase in body
+
+    phrase formats include:
+    "token1 token2" (implicit AND)
+    "token1 + token2" (single search term ... concatenated into single)
+    "(token1 AND token2) OR token3" (booleans with operators in caps and parens for order)
+    '''
+
+    body_cte = f'''
+    body_notes(note_id) as (
+        select rowid from notes_fts
+        where body match "{phrase}"
+    )
+    '''
+    return dedent(body_cte)
+
+def child_cte(note_id: int):
+    "CTE for all notes that are child of note_id"
+
+    child_cte = f'''
+    child_notes(note_id) as (
+        select child_note_id from note_links
+        where parent_note_id = "{note_id}"
+    )
+    '''
+    return dedent(child_cte)
+
+def tag_or_cte(tags: str):
+    "CTE for all notes with any or all of tags provided as 'a, b, c'"
+
+    tags_tuple = tuple(t.strip() for t in tags.split(','))
+    cte = f'''
+    tagged_or_notes(note_id) as (
+        select note_id
+        from note_tags
+        where tag_id in (
+            select id from full_tag_paths where full_tag_path in {tags_tuple}
+        )
+        group by note_id
+    )
+    '''
+    return dedent(cte)
+
+def tag_and_cte(tags: str):
+    "CTE for all notes with all of the provided tags provided as 'a b c' (implicit AND)"
+
+    tags_tuple = tuple(t.strip() for t in tags.split(' '))
+    cte = f'''
+    tagged_and_notes(note_id) as (
+        select note_id
+        from note_tags
+        where tag_id in (
+            select id from full_tag_paths where full_tag_path in {tags_tuple}
+        )
+        group by note_id
+        having count(note_id) = {len(tags_tuple)}
+    )
+    '''
+    return dedent(cte)
+
+# >> CTE keywords to functions maping
+
+# just single characters from alphabet ... could maybe create a mapping
+cte_aliases = list(string.ascii_lowercase)
+
+cte_map = {
+    'id': id_cte,
+    'title': title_cte,
+    'body': body_cte,
+    'child': child_cte,
+    'tag': tag_cte,
+    'tag_or': tag_or_cte,
+    'tag_and': tag_and_cte
+}
+
+cte_table_name_map = {
+    'id': 'id_notes',
+    'title': 'title_notes',
+    'body': 'body_notes',
+    'child': 'child_notes',
+    'tag': 'tagged_notes',
+    'tag_or': 'tagged_or_notes',
+    'tag_and': 'tagged_and_notes'
+}
+
+def query_tag_redirect(parsed_q: dict):
+    "Alter which tag cte used according to contents of query"
+
+    tag_query = parsed_q.get('tag')
+    if tag_query is None:  # no need for redirect, no tag component
+        return parsed_q
+
+    if tag_query.find(',') != -1:  # first, as spaces found with commas
+        parsed_q['tag_or'] = parsed_q['tag']
+        del parsed_q['tag']
+    elif tag_query.find(' ') != -1:
+        parsed_q['tag_and'] = parsed_q['tag']
+        del parsed_q['tag']
+
+    return parsed_q
+
+
+# >> Full query
+
+def mk_super_query(q: str, notes_cols: Optional[list] = None):
+    '''
+    Take string (q) and generate sql query
+
+    Format of q is: "key-word: query; ..."
+
+    See cte_map for key-words and associated cte functions for possible args
+    '''
+
+    # parse q into keywords and associated queries
+    parsed_q = dict([
+        [ssq.strip() for ssq in sq.strip().split(':')]
+        for sq in q.split(';')
+    ])
+    # alter tag keyword as appropriate for contents of the query
+    parsed_q = query_tag_redirect(parsed_q)
+
+    # create CTEs by concatenating and starting with "with"
+    sq = 'with' + ','.join(cte_map[k](v) for k,v in parsed_q.items())
+
+    # add initial select cols statement, using notes_cols if provided
+    # select from alias "z", as this is hardcoded below to be the notes table
+    if not notes_cols:
+        notes_cols = ['id', 'title']
+    selection_cols = f"select {','.join(f'z.{col}' for col in notes_cols)}\n"
+    sq += selection_cols
+
+    # add join statements with aliases from the alphabet
+    for i, k in enumerate(parsed_q.keys()):
+        alias = cte_aliases[i]
+        prev_alias = cte_aliases[i-1]
+        if i == 0:
+            sq += f"from {cte_table_name_map[k]} {alias}\n"
+        else:
+            sq += f"inner join {cte_table_name_map[k]} {alias} on {prev_alias}.note_id = {alias}.note_id\n"
+
+    # add final join on notes table
+    sq += f"inner join notes z on {alias}.note_id = z.id"
+
+    return sq
+
+
 
 # > Fancy Functions
 
@@ -752,6 +991,13 @@ def delete_note(db: DB, note_path: Path):
 
 
 # > CLI
+
+def display_rows(db: DB, result: list):
+
+    print(' | '.join([c[0] for c in db.cursor.description]))
+    for row in result:
+        print(' | '.join([str(v) for v in row]))
+
 
 def cli_config(args):
 
@@ -809,6 +1055,58 @@ def cli_add(args):
 
     print(note_path)
 
+def cli_staged_notes(args):
+
+    db = db_connection(ZK_DB_PATH)
+
+    if not args.update:
+        result = db.ex('select id, title from staged_notes order by add_time desc')
+        display_rows(db, result)
+
+    elif args.update:
+        note_paths = [
+            Path(row[0])
+            for row in
+            db.ex('select note_path from staged_notes')
+        ]
+
+        failed_notes = []
+        for note_path in note_paths:
+            try:
+                update_note(db, note_path)
+            except Exception:
+                failed_notes.append(note_path)
+
+        if failed_notes:
+            print('Failed to update:')
+            print('\n'.join(failed_notes))
+
+
+def cli_open(args):
+
+    db = db_connection(ZK_DB_PATH)
+    note_results = get_note_ids_from_fuzzy_id(db, args.note_id)
+
+    if not note_results:
+        print('No Notes found with id {}'.format(args.note_id))
+    elif isinstance(note_results, list):
+        print('Multiple candidates found')
+        display_rows(db, note_results)
+    else:
+        open_note(db, note_results)
+
+def cli_update(args):
+    db = db_connection(ZK_DB_PATH)
+
+    note_results = get_note_ids_from_fuzzy_id(db, args.note_id)
+
+    if not note_results:
+        print('No Notes found with id {}'.format(args.note_id))
+    elif isinstance(note_results, list):
+        print('Multiple candidates found')
+        display_rows(db, note_results)
+    else:
+        update_note(db, note_results)
 
 def cli_query(args):
 
@@ -816,9 +1114,15 @@ def cli_query(args):
     db = db_connection(ZK_DB_PATH)
     result = db.ex(query)
 
-    print(' '.join([c[0] for c in db.cursor.description]))
-    for row in result:
-        print(' '.join([str(v) for v in row]))
+    display_rows(db, result)
+
+def cli_search(args):
+
+    query = mk_super_query(args.query)
+    db = db_connection(ZK_DB_PATH)
+    result = db.ex(query)
+
+    display_rows(db, result)
 
 
 def main():
@@ -860,16 +1164,47 @@ def main():
         help="Title of the new note",
         )
 
+    # >> Staged notes
+    ap_staged = subparsers.add_parser('staged', description='Staged Notes',
+        help='Managed staged notes')
+    ap_staged.add_argument('-u', '--update',
+        action = 'store_true',
+        help='Update all staged notes from file')
 
-    # >> Run Query
+    # >> Open Notes
+    ap_open = subparsers.add_parser('open', description='Open note in editor',
+        help='Open note by note_id in editor in configuration')
+    ap_open.add_argument('note_id',
+        help='note id to open, can be tail of id which will succeed if possible or print multiples',
+        type=int)
 
-    ap_query = subparsers.add_parser('q', description='Run Query',
-        help='Run a query against the database')
+    # >> Update Note
+    ap_update = subparsers.add_parser('update', description='Update note',
+        help='Update note by note_id ')
+    ap_update.add_argument('note_id',
+        help='note_id of note to update, can be tail which can be tail of full id as with open',
+        type=int)
+
+    # >> Run SQL Query
+
+    ap_query = subparsers.add_parser('sql', description='Run Query',
+        help='Run a sql select query against the database')
     ap_query.add_argument('query',
         help='Query to run, will be automatically preceded by "select "')
     ap_query.add_argument('--limit',
         help='Number to limit return by (default 100)',
         default = 100)
+
+    # >> Run Search Query
+    # uses basic custom format
+    ap_search = subparsers.add_parser('q', description='Search Notes',
+        help='Run a search for notes')
+    ap_search.add_argument('query',
+        help='''
+        Query to search with.
+        Format: "keyword: query; ...".
+        Keywords: "tag", "title", "body", "child"''')
+
 
 
     args = parser.parse_args()
@@ -886,8 +1221,16 @@ def main():
                 ZK_PATH))
     elif args.sub_command == 'add':
         cli_add(args)
-    elif args.sub_command == 'q':
+    elif args.sub_command == 'staged':
+        cli_staged_notes(args)
+    elif args.sub_command == 'open':
+        cli_open(args)
+    elif args.sub_command == 'update':
+        cli_update(args)
+    elif args.sub_command == 'sql':
         cli_query(args)
+    elif args.sub_command == 'q':
+        cli_search(args)
 
 if __name__ == '__main__':
     main()

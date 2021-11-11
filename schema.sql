@@ -1,5 +1,14 @@
 pragma foreign_keys = ON;
 
+-- > Meta data
+
+-- Maybe add trigger on all insert,update,delete to update last_mod_time?
+create table if not exists
+meta_data(
+    last_mod_time text,
+    version text
+);
+
 -- > Notes
 
 create table if not exists
@@ -11,6 +20,7 @@ notes (
     mod_time text
 );
 
+-- >> Staged Notes
 -- Notes added but not yet properly updated
 create table if not exists
 staged_notes (
@@ -245,6 +255,7 @@ create trigger if not exists tag_path_update_update
 
 
 
+-- >> Note tags table
 
 create table if not exists
     note_tags (
@@ -253,6 +264,18 @@ create table if not exists
         foreign key (note_id) references notes (id),
         foreign key (tag_id) references tags (id)
         );
+
+-- >>> With unique constraint and index
+-- Check functionallity (and maybe performance)?
+-- create table if not exists
+--     note_tags (
+--         note_id integer,
+--         tag_id integer,
+--         foreign key (note_id) references notes (id),
+--         foreign key (tag_id) references tags (id),
+--         unique (note_id, tag_id)
+--         on conflict abort
+--         );
 
 
 
