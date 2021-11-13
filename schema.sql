@@ -124,7 +124,7 @@ pnts(id, tag, parent_id, id_path, tag_path) as
         pnts.id_path || '/' || pnts.id as id_path,
         pnts.tag_path || '/' || pnts.tag as tag_path
     from tags_parents m
-    join pnts
+    inner join pnts
     on pnts.id = m.parent_id
     order by m.parent_id desc
     )
@@ -164,7 +164,7 @@ create trigger if not exists tag_path_update_insert
                     pnts.id_path || '/' || pnts.id as id_path,
                     pnts.tag_path || '/' || pnts.tag as tag_path
                 from tags_parents m
-                join pnts
+                inner join pnts
                 on pnts.id = m.parent_id
                 order by m.parent_id desc
                 )
@@ -203,7 +203,7 @@ create trigger if not exists tag_path_update_delete
                     pnts.id_path || '/' || pnts.id as id_path,
                     pnts.tag_path || '/' || pnts.tag as tag_path
                 from tags_parents m
-                join pnts
+                inner join pnts
                 on pnts.id = m.parent_id
                 order by m.parent_id desc
                 )
@@ -242,7 +242,7 @@ create trigger if not exists tag_path_update_update
                     pnts.id_path || '/' || pnts.id as id_path,
                     pnts.tag_path || '/' || pnts.tag as tag_path
                 from tags_parents m
-                join pnts
+                inner join pnts
                 on pnts.id = m.parent_id
                 order by m.parent_id desc
                 )
@@ -257,25 +257,25 @@ create trigger if not exists tag_path_update_update
 
 -- >> Note tags table
 
-create table if not exists
-    note_tags (
-        note_id integer,
-        tag_id integer,
-        foreign key (note_id) references notes (id),
-        foreign key (tag_id) references tags (id)
-        );
-
--- >>> With unique constraint and index
--- Check functionallity (and maybe performance)?
 -- create table if not exists
 --     note_tags (
 --         note_id integer,
 --         tag_id integer,
 --         foreign key (note_id) references notes (id),
---         foreign key (tag_id) references tags (id),
---         unique (note_id, tag_id)
---         on conflict abort
+--         foreign key (tag_id) references tags (id)
 --         );
+
+-- >>> With unique constraint and index
+-- Check functionallity (and maybe performance)?
+create table if not exists
+    note_tags (
+        note_id integer,
+        tag_id integer,
+        foreign key (note_id) references notes (id),
+        foreign key (tag_id) references tags (id),
+        unique (note_id, tag_id)
+        on conflict abort
+        );
 
 
 
