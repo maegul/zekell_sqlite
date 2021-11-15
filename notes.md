@@ -340,11 +340,14 @@ loader.exec_module(mod)
   * Whereever `UNIQUE` constraints are applied an index is effectively created (see [docs on create table](https://www.sqlite.org/lang_createtable.html#unique_constraints)).
     - So ... **only the `note_tags` table would need an index**... or unique constraint on both columns
     
-* [ ] Add unique constraint on `note_tags`
+* [X] Add unique constraint or an index on `note_tags`
   * Makes sense to ensure uniqueness here
   * Should create an index that should make queries faster
+  * **Perhaps unnecessary**
+    - Using `explain query plan` shows lines like `SEARCH TABLE note_tags AS c USING AUTOMATIC COVERING INDEX (tag_id=? AND note_id=?)`, indicating that an index is created automatically already.  This is probably through the foreign key constraint that references the id columns of the `notes` and `tags` tables, both of which are primary key columns (and so should be indexed)
+    - Though see the [sqlite docs on foreign keys](https://sqlite.org/foreignkeys.html#fk_indexes) where it is suggested an index on the child columns is still useful for when certain actions such as delete occur.
 
-* [ ] Create CLI
+* [X] Create CLI
   * General a CRUD interface on notes and tags + querying
   * [X] Add sql command for straight sql
   * [X] add custom query command for custom short hand queries
@@ -364,8 +367,9 @@ loader.exec_module(mod)
     * In combining the components of this query, there will be active and passive filtering
       - Eg: all notes that are children of note X, or all notes that are children of the notes from the previous component ... how to string all of this together?  _best approach is probably to put together various specific queries that are obviously useful, to get a feel for how it can all be put together_
       - Well, _passive_ filtering is done just by joining (kinda easy).  Ordinarily, active filtering would involve a `WHERE` within a subquery or CTE.
-  * [ ] Allow for simple _children of_ and _parents of_ passive components
+  * [X] Allow for simple _children of_ and _parents of_ passive components
   * [ ] Allow for OR between components (using `outer join` rather than `inner join`)
+    * sqlite doesn't support full outer joins.  They can be hacked together with a union of mirroring left joins ... but would it be worth it?
   * [ ] Allow for complex tag queries
     - boolean operations on multiple tags
     - **Perhaps the [toxi](http://howto.philippkeller.com/2005/04/24/Tags-Database-schemas/) scheme is not appropriate for this?**  It's possible, but perhaps to combersome especially if trying to integrate it with other query components.
@@ -373,10 +377,97 @@ loader.exec_module(mod)
       + Harder to query _what are all the tags in the database_ then ... so maybe both?
       + To remove the slash (`/`) from token separators see [docs on unicode tokenizer options](https://www.sqlite.org/fts5.html#unicode61_tokenizer) where characters can be added to the set of token and separator characters.  With this, whitespace would be used to separate tags and slashes would be retained as part of a single token.
       + Boolean queries would become simpler, using `sql` booleans on `like "%TAG%"` statements (see [examples in this blog post](http://howto.philippkeller.com/2005/04/24/Tags-Database-schemas/))
+    - Including tag children in query (ie, tag `software` includes `software/theory`)
+      + Probably best as a separate action from direct tag search ... simple recursive?
+        + first step is to find all tags that are child of specified tag
+        + Then, a simple `where tag_id in (...)` should do it.
+
+```sql
+-- All children of tag with parent_id ? 
+    with recursive all_tag_children(id, tag, parent_id) as (
+        -- Optionally including the initial tag too
+        select id, tag, parent_id from tags
+        where id = ?
+        union
+        select id, tag, parent_id from tags
+        where parent_id = ?
+        union
+        select a.id id, a.tag tag, a.parent_id parent_id
+        from tags a
+        inner join all_tag_children b on a.parent_id = b.id
+    ),
+    tag_children_notes(note_id) as (
+        select note_id from note_tags
+        where tag_id in (
+            select id from all_tag_children
+        )
+    )
+    -- End of CTE
+    -- selection in the course of full query
+    select note_id from tag_children_notes
+
+```
+
+  * [X] Add follow-through children (and parent) query commands that select all immediate children of the previously selected notes
+  * [X] Same for parent (?)
+  * [ ] Add a distinct or group by to eliminate duplicates in children or parents
+    * from inspections of query plans (with `explain query plan`), distinct or group by make no difference in the plan.  Quick timing tests show no observable difference in the timing.
+
+```sql
+-- For example
+
+-- Previous selection ... simple title FTS
+with title_notes(note_id) as (
+    select rowid from notes_fts where title match "alice"
+)
+,
+-- Actual children notes CTE
+-- note that both parent and child note ids are required
+-- here child_note_id is aliased to note_id as it will continue along in the chain of joins
+children_notes(parent_note_id, note_id) as (
+    select parent_note_id, child_note_id
+    from note_links
+)
+-- selecting and joining
+select z.id
+from title_notes a
+-- This is different from the usual pattern, where the join MUST be on the parent_note_id column
+-- whilst the child_note_id continues along as note_id
+-- to implement programmatically will require some logic to alter the usual pattern for
+-- these "passive" "follow-through" CTEs
+inner join children_notes b
+    on a.note_id = b.parent_note_id
+inner join notes z
+    on b.note_id = z.id
+```
+
   * [ ] Querying all children (at all levels) of a note (or even set of notes)
     * [ ] Need a recursive CTE
       * Can limit the number of levels?  Could be useful to do so only to 5 levels or so so that the number of notes doesn't explode?
       * How handle cycles?
+        - Not sure can limit number of cycles, _but only total number of rows added_ through an ordinar `LIMIT` statement
+
+```sql
+-- Note the limit of 100 in final line
+-- This is arbitrary, but a good safety limit makes sense (maybe 1000?)
+-- Also note that this requires the seed parent_note_id
+  -- Could use a like %XXXX fuzzy search for the note_id ?
+with recursive all_children(parent_id, note_id) as (
+    select parent_note_id, child_note_id from note_links
+    where parent_note_id = ?
+    union
+    select parent_note_id, child_note_id 
+        from note_links a
+        inner join all_children b
+        on b.note_id = a.parent_note_id
+        limit 100
+)
+select note_id from all_children
+```
+
+
+
+  * [ ] ensure custom query interface is protected from sql insertion attacks
 
 * [X] Allow for fuzzy search over note ids??
   * Idea is to be like git SHAs ... allow using the first 6 digits of a note to search for a ntoe
@@ -405,5 +496,13 @@ loader.exec_module(mod)
 * [X] Change modified time column to float (?)
   * Idea is to enable easier sorting in the database?
   * but sqlite seems quite happy to sort text.  In fact, it seems faster compared to sorting floats, which makes some sense as floating point might introduce some problems. ... **Note done, left as text!!**
+
+* [ ] sublime plugin?
+  * [ ] General Query interface:
+    * Use plane text input (simple, but prone to errors) ... _or_ ...
+    * Use [List Inputs](https://www.sublimetext.com/docs/api_reference.html#sublime_plugin.ListInputHandler) in combination with `next_inputs`
+      - Initial selection are available keys (`tag`, `title` etc)
+      - On selection, another list input (for `tag` for instance, where there are limited options), or, a general text input.
+        + For `id`, a follow-up list input might make sense, which returns the list of possible options if there are more than one (or even when there is only one, just to confirm)
 
 

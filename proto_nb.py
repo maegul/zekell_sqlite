@@ -433,6 +433,25 @@ db.ex('''
 # -----------
 
 # >> join parents
+db.ex('select * from tags')
+db.ex('select * from full_tag_paths')
+# ===========
+db.ex('insert into tags(tag, parent_id) values(?,?)', ['space', 3])
+# -----------
+# ===========
+db.ex(['insert into tags(tag, parent_id) values(?,?)']*3, [
+    ['clock', 3],
+    ['business', 7],
+    ['or', 9]
+    ])
+# -----------
+# ===========
+db.ex(['insert into tags(tag, parent_id) values(?,?)']*3, [
+    ['star', 15],
+    ['planet', 15],
+    ['face', 16]
+    ])
+# -----------
 # ===========
 db.ex('''
     select m.id, p.tag parent, m.tag, p.id parentid
@@ -441,6 +460,83 @@ db.ex('''
     on m.parent_id = p.id
     ''')
 # -----------
+# ===========
+db.ex('''
+    with recursive tag_children(id, tag, parent_id) as (
+        select a.id id, a.tag tag, a.parent_id parent_id
+        from tags a
+        left join tags b
+        on a.parent_id = b.id
+    )
+    select * from tag_children
+    where parent_id = 3
+    '''
+    )
+# -----------
+# ===========
+db.ex('''
+    with recursive tag_children(id, tag, parent_id) as (
+        select id, tag, parent_id
+        from tags
+        where parent_id = ?
+    ),
+    all_tag_children(id, tag, parent_id) as (
+        select id, tag, parent_id from tag_children
+        union
+        select a.id id, a.tag tag, a.parent_id parent_id
+        from tags a
+        inner join all_tag_children b on a.parent_id = b.id
+    )
+    select id from all_tag_children
+    ''',
+    [3])
+# -----------
+# ===========
+db.ex('''
+    select note_id from note_tags
+    where tag_id in (
+    with recursive tag_children(id, tag, parent_id) as (
+        select id, tag, parent_id
+        from tags
+        where parent_id = ?
+    ),
+    all_tag_children(id, tag, parent_id) as (
+        select id, tag, parent_id from tag_children
+        union
+        select a.id id, a.tag tag, a.parent_id parent_id
+        from tags a
+        inner join all_tag_children b on a.parent_id = b.id
+    )
+    select id from all_tag_children
+    )
+    ''',
+    [3])
+# -----------
+# ===========
+db.ex('''
+    with recursive all_tag_children(id, tag, parent_id) as (
+        select id, tag, parent_id from tags
+        where id = ?
+        union
+        select id, tag, parent_id from tags
+        where parent_id = ?
+        union
+        select a.id id, a.tag tag, a.parent_id parent_id
+        from tags a
+        inner join all_tag_children b on a.parent_id = b.id
+    ),
+    tag_children_notes(note_id) as (
+        select note_id from note_tags
+        where tag_id in (
+            select id from all_tag_children
+        )
+    )
+    select note_id from tag_children_notes
+    ''',
+    [3, 3])
+# -----------
+db.ex('select note_id from note_tags where tag_id = 3')
+db.ex('insert into note_tags(note_id, tag_id) values(20211031083086, 16)')
 
 # >> full tag paths proto
 # ===========
@@ -1005,7 +1101,6 @@ tags: {}
 '''.format
 
 punctuation_replace = str.maketrans({p: '' for p in string.punctuation + string.whitespace[1:]})
-
 # alice = Path('/Data/alice_in_wonderland.txt').read_text()
 alice = Path('./alice_in_wonderland.txt').read_text()  # presume in main zekell dir
 lines = alice.splitlines()
@@ -1044,6 +1139,7 @@ def mk_new_note(id):
 
 # -----------
 # ===========
+pwd
 cd dummy_proto
 # -----------
 # ===========
@@ -1069,6 +1165,11 @@ db_init(db)
 # -----------
 # ===========
 db.ex('select name from sqlite_master where type = "table"')
+# -----------
+# ===========
+for result in db.ex('select sql from sqlite_master where type = "table"'):
+    print(result[0])
+
 # -----------
 # ===========
 note_paths = list(Path('.').glob('*.md'))
@@ -1536,6 +1637,46 @@ db.ex(f'''
     ''')
 # -----------
 
+# >>>> all childrent CTE
+# ===========
+db.ex('select * from note_links limit 10')
+# -----------
+# ===========
+db.ex('''
+    with recursive all_children(parent_id, note_id) as (
+        select parent_note_id, child_note_id from note_links
+        where parent_note_id = ?
+        union
+        select parent_note_id, child_note_id
+            from note_links a
+            inner join all_children b
+            on b.note_id = a.parent_note_id
+            limit 100
+    )
+    select note_id from all_children
+    ''',
+    [20211031083130, 10])
+# -----------
+# >>>> all children of prior selection
+# ===========
+db.ex('''
+    with title_notes(note_id) as (
+        select rowid from notes_fts where title match "alice"
+    )
+    ,
+    children_notes(parent_note_id, note_id) as (
+        select parent_note_id, child_note_id
+        from note_links
+    )
+    select z.id
+    from title_notes a
+    inner join children_notes b
+        on a.note_id = b.parent_note_id
+    inner join notes z
+        on b.note_id = z.id
+    ''')
+# -----------
+
 # >>>> query DSL
 
 # CTE componets
@@ -1673,6 +1814,53 @@ db.ex(mk_super_query('body: alice; tag: she; title: about', ['id', 'title']))
 
 # implicit and in above ... how or (using outer join?)
 # not the highest priority
+
+# >>>> Testing DSL
+# ===========
+db.ex(
+    mk_super_query('body: alice; tag: She; title: of; children')
+    )
+# -----------
+# ===========
+ta = db.ex(
+    mk_super_query('body: alice; children; tag: she')
+    )
+len(ta)
+# -----------
+print(mk_super_query('body: alice; tag: She; title: of; children'))
+# ===========
+tb = db.ex('''
+    select z.id, z.title
+    from notes_fts a
+    inner join note_links b
+        on a.rowid = b.parent_note_id
+    inner join note_tags c
+        on b.child_note_id = c.note_id
+    inner join notes z
+        on c.note_id = z.id
+    where
+        a.body match "alice"
+        and
+        c.tag_id = (
+            select id from full_tag_paths where full_tag_path = "she"
+        )
+    group by b.child_note_id
+    ''')
+len(tb)
+# -----------
+set(ta) == set(tb)
+set(ta).difference(set(tb))
+set(ta).intersection(set(tb))
+set(ta).issubset(set(tb))
+# ===========
+db.ex(mk_super_query('body: alice'))
+# -----------
+# ===========
+print(mk_super_query('body: alice; children; tag: she'))
+# -----------
+# ===========
+db.ex(mk_super_query('body: alice; children; tag: she'))
+# -----------
 
 # > Fuzzy note id
 
