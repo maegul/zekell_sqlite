@@ -70,8 +70,10 @@ note_name_template = Template('$id $title').substitute
 note_file_name_template = Template('$id $title'+NOTE_EXTENSION).substitute
 
 note_name_pattern = re.compile(r'^(\d{10,14}) (.*)')
-link_pattern = re.compile(r'\[([\w\- ]*)\]\(\/(\d{10,14})\)')
-front_matter_pattern = re.compile(r'(?s)^---\n(.+)\n---')
+# make link_pattern more permissive so that title/comment can be anything?
+link_pattern = re.compile(r'\[(.*?)\]\(\/(\d{10,14})\)')
+# non greedy for contents so that don't accidentally match whole file!
+front_matter_pattern = re.compile(r'(?s)^---\n(.+?)\n---')
 
 # links to notes to be created on parsing ... add later ... nice to have
 # Must have a title (at least one character) and no id, but a slash!
