@@ -238,8 +238,15 @@ def db_init(db: DB):
 # >> Notes
 
 def make_mod_time() -> float:
+    "timestamp of right now in UTC (for recording modified times)"
     return dt.datetime.utcnow().timestamp()
 
+def get_note_mod_time(note_path: Path) -> float:
+    "modified time of a file, according to OS, as timestamp, in UTC time"
+    file_mtime = note_path.stat().st_mtime
+    # file_mtime is in system/OS timezone
+    # utcfromtimestamp gives time in UTC timezone
+    return dt.datetime.utcfromtimestamp(file_mtime).timestamp()
 
 def make_new_note_id() -> int:
     now = int(dt.datetime.utcnow().strftime('%Y%m%d%H%M%S'))
@@ -712,7 +719,7 @@ def add_old_note(db, note_path: Path):
 
 def add_batch_old_note(db, note_paths: list):
 
-    failed_notes = []
+    failed_notes = set()
     for note_path in note_paths:
         note = parse_note(note_path)
 
@@ -723,18 +730,51 @@ def add_batch_old_note(db, note_paths: list):
         try:
             db.ex('insert into notes(id, title) values(?, ?)', [note.id, note.title])
         except Exception:
-            failed_notes.append(note_path)
+            failed_notes.add(note_path)
 
-    failed_notes = set(failed_notes)
-    update_fails = []
+    update_fails = set()
     for note_path in note_paths:
         if note_path not in failed_notes:
             try:
                 update_note(db, note_path)
             except Exception:
-                update_fails.append(note_path)
+                update_fails.add(note_path)
 
     return failed_notes, update_fails
+
+
+def update_all_notes(db: DB, note_dir_path: Path) -> Tuple[set, set]:
+    "Add or update all note_path files in note_dir_path"
+
+    note_paths = note_dir_path.glob(f'*{NOTE_EXTENSION}')
+
+    new_note_paths = []
+    update_note_paths = []
+
+    for note_path in note_paths:
+        note = parse_note(note_path)
+        result = db.ex('select mod_time from notes where id = ?', [note.id])
+        # note not in database as empty list returned
+        if not result:
+            new_note_paths.append(note_path)
+        else:
+            mod_time = float(result[0][0])
+            note_mod_time = get_note_mod_time(note_path)
+            # note file modified since database entry was last updated
+            if note_mod_time > mod_time:
+                update_note_paths.append(note_path)
+
+    # add new notes
+    failed, update_failed = add_batch_old_note(db, new_note_paths)
+
+    # update notes that have been modified
+    for note_path in update_note_paths:
+        try:
+            update_note(db, note_path)
+        except Exception:
+            update_failed.add(note_path)
+
+    return failed, update_failed
 
 
 def delete_note(db: DB, note_path: Path):
@@ -867,6 +907,36 @@ def child_cte(note_id: int):
     '''
     return dedent(child_cte)
 
+def children_cte(*_):
+    """all children of all previously selected notes
+
+    Is a passive follow-through CTE that simply allows for a join
+    """
+
+    cte = f'''
+    children_notes(parent_note_id, note_id) as (
+        select parent_note_id, child_note_id
+        from note_links
+    )
+    '''
+
+    return dedent(cte)
+
+def parents_cte(*_):
+    """all children of all previously selected notes
+
+    Is a passive follow-through CTE that simply allows for a join
+    """
+
+    cte = f'''
+    parents_notes(note_id, child_note_id) as (
+        select parent_note_id, child_note_id
+        from note_links
+    )
+    '''
+
+    return dedent(cte)
+
 def tag_or_cte(tags: str):
     "CTE for all notes with any or all of tags provided as 'a, b, c'"
 
@@ -910,20 +980,44 @@ cte_map = {
     'title': title_cte,
     'body': body_cte,
     'child': child_cte,
+    'children': children_cte,
+    'parents': parents_cte,
     'tag': tag_cte,
     'tag_or': tag_or_cte,
     'tag_and': tag_and_cte
 }
-
+# name of CTE defined by cte function (mapped from keywords above)
 cte_table_name_map = {
     'id': 'id_notes',
     'title': 'title_notes',
     'body': 'body_notes',
     'child': 'child_notes',
+    'children': 'children_notes',
+    'parents': 'parents_notes',
     'tag': 'tagged_notes',
     'tag_or': 'tagged_or_notes',
     'tag_and': 'tagged_and_notes'
 }
+
+# >>> CTE join constraints
+
+# join constraint for ordinary note_id-on-note_id CTEs
+# all have a basic note_id on note_id join as all the filtering occurs WITHIN the CTE
+cte_ordinary_join_constraint = "on {left}.note_id = {right}.note_id".format
+
+cte_join_constraints = {
+    'id': cte_ordinary_join_constraint,
+    'title': cte_ordinary_join_constraint,
+    'body': cte_ordinary_join_constraint,
+    'child': cte_ordinary_join_constraint,
+    'tag': cte_ordinary_join_constraint,
+    'tag_or': cte_ordinary_join_constraint,
+    'tag_and': cte_ordinary_join_constraint,
+    # flow-through CTE, must join on distinct column and pass new note_id column through
+    'children': "on {left}.note_id = {right}.parent_note_id".format,
+    'parents': "on {left}.note_id = {right}.child_note_id".format
+}
+
 
 def query_tag_redirect(parsed_q: dict):
     "Alter which tag cte used according to contents of query"
@@ -951,23 +1045,31 @@ def mk_super_query(q: str, notes_cols: Optional[list] = None):
     Format of q is: "key-word: query; ..."
 
     See cte_map for key-words and associated cte functions for possible args
+
+    Works by having each cte create a note_id column for their selection, and inner joining
+    each of these CTEs on the note_id columns.
+    Finally, the main selection is made on the notes table and joined onto the final CTE
     '''
 
     # parse q into keywords and associated queries
-    parsed_q = dict([
-        [ssq.strip() for ssq in sq.strip().split(':')]
-        for sq in q.split(';')
-    ])
+    parsed_q = {}
+    for sq in q.split(';'):
+        # use partition for when no args provided with command
+        # partition returns an empty string when no separator
+        ssq = sq.strip().partition(':')
+        parsed_q[ssq[0].strip()] = ssq[2].strip()
+
     # alter tag keyword as appropriate for contents of the query
     parsed_q = query_tag_redirect(parsed_q)
 
     # create CTEs by concatenating and starting with "with"
     sq = 'with' + ','.join(cte_map[k](v) for k,v in parsed_q.items())
 
-    # add initial select cols statement, using notes_cols if provided
+    # add main initial select cols statement, using notes_cols if provided
     # select from alias "z", as this is hardcoded below to be the notes table
     if not notes_cols:
         notes_cols = ['id', 'title']
+    #                                     V this "z" is alias for notes table (below)
     selection_cols = f"select {','.join(f'z.{col}' for col in notes_cols)}\n"
     sq += selection_cols
 
@@ -976,16 +1078,18 @@ def mk_super_query(q: str, notes_cols: Optional[list] = None):
         alias = cte_aliases[i]
         prev_alias = cte_aliases[i-1]
         if i == 0:
-            sq += f"from {cte_table_name_map[k]} {alias}\n"
+            sq += f"from {cte_table_name_map[k]} {alias}"
         else:
-            sq += f"inner join {cte_table_name_map[k]} {alias} on {prev_alias}.note_id = {alias}.note_id\n"
+            sq += dedent(
+                    f"""
+                    inner join {cte_table_name_map[k]} {alias}
+                    {cte_join_constraints[k](left=prev_alias, right=alias)}"""
+                        )
 
     # add final join on notes table
-    sq += f"inner join notes z on {alias}.note_id = z.id"
+    sq += f"\ninner join notes z on {alias}.note_id = z.id"  # type: ignore
 
     return sq
-
-
 
 # > Fancy Functions
 
@@ -1030,7 +1134,7 @@ def cli_init(args):
             db = db_connection(db_path)
         else:
             ZK_PATH.mkdir(exist_ok=True)
-            db = db_connection(db_path, new=True)
+            db = db_connection(new=True, db_path=db_path)
             print('Created Zekell at {} and Database at {}'.format(
                 ZK_PATH, db_path))
 
@@ -1110,6 +1214,19 @@ def cli_update(args):
     else:
         update_note(db, note_results)
 
+def cli_update_all(_):
+
+    db = db_connection(ZK_DB_PATH)
+    failed, update_failed = update_all_notes(db, ZK_PATH)
+
+    # need to start logging this sort of stuff!
+    if failed or update_failed:
+        print('Failed to add notes:')
+        print(failed)
+        print('Failed to update notes:')
+        print(update_failed)
+
+
 def cli_query(args):
 
     query = 'select {} limit {}'.format(args.query, args.limit)
@@ -1137,7 +1254,8 @@ def main():
 
     # >> Config
 
-    ap_config = subparsers.add_parser('config', description='Configuration')
+    ap_config = subparsers.add_parser('config', description='Configuration',
+        help='View or manage configuration')
     ap_config.add_argument('-p', '--print',
         action='store_true',
         help="Print current config and setup")
@@ -1187,6 +1305,10 @@ def main():
         help='note_id of note to update, can be tail which can be tail of full id as with open',
         type=int)
 
+    # >> Update all notes
+    ap_update_all = subparsers.add_parser('update-all', description='Update or add all notes',
+        help='All notes in zekell path will be added or if modified since last updated, updated')
+
     # >> Run SQL Query
 
     ap_query = subparsers.add_parser('sql', description='Run Query',
@@ -1202,10 +1324,10 @@ def main():
     ap_search = subparsers.add_parser('q', description='Search Notes',
         help='Run a search for notes')
     ap_search.add_argument('query',
-        help='''
+        help=f'''
         Query to search with.
         Format: "keyword: query; ...".
-        Keywords: "tag", "title", "body", "child"''')
+        Keywords: {', '.join(cte_map.keys())}''')
 
 
 
@@ -1229,6 +1351,8 @@ def main():
         cli_open(args)
     elif args.sub_command == 'update':
         cli_update(args)
+    elif args.sub_command == 'update-all':
+        cli_update_all(args)
     elif args.sub_command == 'sql':
         cli_query(args)
     elif args.sub_command == 'q':
