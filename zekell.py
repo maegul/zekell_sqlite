@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 
 from pprint import pprint
+import subprocess as sp
 import string
 from textwrap import dedent
 from argparse import ArgumentParser
@@ -271,11 +272,6 @@ def make_note_file_name(note_name: NoteName) -> str:
 def parse_note_name(source: Union[str, Path]) -> NoteName:
 
     if isinstance(source, Path):
-
-        # core data about the file
-        if not source.exists():
-            raise NoteError('Note not found at path {}'.format(source))
-
         source_string = source.stem
 
     else:
@@ -661,6 +657,9 @@ def update_note(db: DB, note_path: Path):
     "Update content of existing note"
     # everything but the ID (that would be a new note)
     # tags could be tricky ... probably need a separate add/update tags function
+
+    if not note_path.exists():
+        raise NoteError('Note not found at path {}'.format(source))
 
     note = parse_note(note_path)
 
@@ -1211,8 +1210,23 @@ def cli_update(args):
     elif isinstance(note_results, list):
         print('Multiple candidates found')
         display_rows(db, note_results)
-    else:
-        update_note(db, note_results)
+    else:  # note_results is path
+        note_path = note_results
+
+        # if title of note has been changed, presume ID is the same
+        if not note_results.exists():
+            note = parse_note_name(note_results)
+            note_path_candidates = list(ZK_PATH.glob(f'{note.id}*'))
+            if not note_path_candidates:
+                print('No note files found with id {}'.format(note.id))
+            elif len(note_path_candidates) != 1:
+                print('Multiple note files found with id {}'.format(note.id))
+                print(note_path_candidates)
+            else:
+                note_path = note_path_candidates[0]
+
+        update_note(db, note_path)
+
 
 def cli_update_all(_):
 
