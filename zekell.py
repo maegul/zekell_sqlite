@@ -475,17 +475,31 @@ def add_new_tag_path(db: DB, new_tag_path: str):
 
     paths = get_all_full_tag_path(db)
 
-    new_path_parents = [  # get longest match from all tag_paths
-        tag_path for tag_path
-        in paths
-        if tag_path in new_tag_path
-        ]
+    ## BUG HERE
+    # if new_tag_path is a single string with no hierarchy (no slash)
+    # it is still treated as a full path, despite lack of slashes
+    # and a parent that is a sub-string will be found if it exists in
+    # the previously existing paths
 
-    if new_tag_path in paths:
-        # shouldn't happen, but just in case
-        return
+    # quick fix ... check if hierarchical
+    if '/' in new_tag_path:
+        new_path_parents = [  # get longest match from all tag_paths
+            tag_path for tag_path
+            in paths
+            if tag_path in new_tag_path
+            ]
 
-    new_path_parent = max(new_path_parents, default=None)
+        if new_tag_path in paths:
+            # shouldn't happen, but just in case
+            return
+
+        new_path_parent = max(new_path_parents, default=None)
+    # just a simple top level tag
+    else:
+        new_tag = new_tag_path
+        add_tag(db, new_tag, parent_id=None)
+        new_id = get_tag_id(db, new_tag, parent_id=None)
+        return new_id
 
     # no match or match does not start from beginning or is not SUB-string (ie too long)
     # then new path is all new tags
