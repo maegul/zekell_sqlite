@@ -330,6 +330,18 @@ loader.exec_module(mod)
   - [ ] batch add all files ahead of database
 * [ ] Delete notes
   * [ ] Remove links
+* [ ] Change note title
+  * Because of the binding between note files and notes in the database, this may not be trivial
+    - `update_note()` works by updating all fields for the record with the provided note id.  So, for this function, relying on a constant note_id is viable, *so long as a valid file path is provided with the current version of the note, even with a changed title*.
+    - The CLI `update` relies on the note_id to then retrieve the title of the note from which the path of the file is *inferred*.  This is quick and convenient.  But, to change the title of a note, a distinct function will be required.
+      + takes note_id (fuzzy too)
+      + obtains full note_id from database along with older title
+      + Searches for note_file with matching note_id
+        * If can't be found, error
+      + performs update using path of actual note file found in search
+    - [X] Update `cli_update` to search for matching notes (by note_id) when the file_path title has changed
+    - [ ] When using the package and not the CLI for the sublime plugin, clean the process up by updating directly with the file's current path and name using the `update_note()` function, checking if the id exists etc.
+    - Updating a note, which is done by starting with the file, will hit an error if the title has been changed (even though the id is unchanged).
 + [ ] Delete Tags
   * Only if not used in any notes!
 - [ ] add to references table
@@ -368,6 +380,27 @@ loader.exec_module(mod)
       - Eg: all notes that are children of note X, or all notes that are children of the notes from the previous component ... how to string all of this together?  _best approach is probably to put together various specific queries that are obviously useful, to get a feel for how it can all be put together_
       - Well, _passive_ filtering is done just by joining (kinda easy).  Ordinarily, active filtering would involve a `WHERE` within a subquery or CTE.
   * [X] Allow for simple _children of_ and _parents of_ passive components
+  * [ ] Modify the `title` and `body` components to always be one CTE
+    * At the moment, they are separate and are joined.
+    * **for some reason**, this is a sub-optimal join, performing worse than other queries by orders of magnitude.
+    * But, if both `where` statements are put into a single CTE, performance is excellent again.
+    * Have some code that looks for both `title` and `body` and constructs a single CTE
+    * To combine them requires only a single `where` statement:
+      - `where title match "alice" and body match "queen"`
+      - more fully ... 
+
+```sql
+with
+title_notes(note_id) as (
+    select rowid from notes_fts
+    where title match "alice" and body match "queen"
+)
+select z.id,z.title
+from title_notes a
+inner join notes z on a.note_id = z.id
+```
+
+
   * [ ] Allow for OR between components (using `outer join` rather than `inner join`)
     * sqlite doesn't support full outer joins.  They can be hacked together with a union of mirroring left joins ... but would it be worth it?
   * [ ] Allow for complex tag queries
@@ -468,6 +501,17 @@ select note_id from all_children
 
 
   * [ ] ensure custom query interface is protected from sql insertion attacks
+
+
+* [X] Run performance tests for various numbers of notes
+  * 1000, 5000, 10_000, 50_000, 100_000
+  * Use instance on AWS
+  * need code for:
+    - making dummy notes (like from alice in wonderland)
+    - running and timing queries
+      + Probably just use `zekell` CLI with `q` search machinery.
+    - Setting up and tearing down notes
+
 
 * [X] Allow for fuzzy search over note ids??
   * Idea is to be like git SHAs ... allow using the first 6 digits of a note to search for a ntoe
