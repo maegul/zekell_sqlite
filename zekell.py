@@ -481,19 +481,25 @@ def add_new_tag_path(db: DB, new_tag_path: str):
     # and a parent that is a sub-string will be found if it exists in
     # the previously existing paths
 
+    if new_tag_path in paths:
+        # tag already in database
+        # shouldn't happen, but just in case
+        return
+
     # quick fix ... check if hierarchical
     if '/' in new_tag_path:
         new_path_parents = [  # get longest match from all tag_paths
             tag_path for tag_path
             in paths
-            if tag_path in new_tag_path
+            if new_tag_path.startswith(tag_path)  # ensure parent is at start
+            # if tag_path in new_tag_path
             ]
 
-        if new_tag_path in paths:
-            # shouldn't happen, but just in case
-            return
-
-        new_path_parent = max(new_path_parents, default=None)
+        # find max according to most levels in common
+        new_path_parent = max(
+            new_path_parents,
+            key = lambda s: len(s.split('/')),
+            default=None)
     # just a simple top level tag
     else:
         new_tag = new_tag_path
@@ -513,6 +519,7 @@ def add_new_tag_path(db: DB, new_tag_path: str):
         new_tags = new_tag_path[len(new_path_parent)+1:].split('/')
 
     for new_tag in new_tags:
+        print(new_tag, new_path_parent_id)
         add_tag(db, new_tag, parent_id = new_path_parent_id)
         new_id = get_tag_id(db, new_tag, parent_id=new_path_parent_id)
         # now use new tag as parent id for the next
@@ -673,7 +680,7 @@ def update_note(db: DB, note_path: Path):
     # tags could be tricky ... probably need a separate add/update tags function
 
     if not note_path.exists():
-        raise NoteError('Note not found at path {}'.format(source))
+        raise NoteError('Note not found at path {}'.format(note_path))
 
     note = parse_note(note_path)
 
@@ -1198,7 +1205,9 @@ def cli_staged_notes(args):
 
         if failed_notes:
             print('Failed to update:')
-            print('\n'.join(failed_notes))
+            for fn in failed_notes:
+                print(fn)
+            # print('\n'.join(failed_notes))
 
 
 def cli_open(args):
@@ -1274,6 +1283,8 @@ def cli_search(args):
 def cli_graph(_):
 
     db = db_connection(ZK_DB_PATH)
+    # this will only display notes that are connected to other notes
+    # no floating notes will be displayed here!
     q = '''
         select a.parent_note_id, b.title, a.child_note_id, c.title
         from note_links a
