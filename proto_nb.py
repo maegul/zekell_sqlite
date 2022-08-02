@@ -1821,12 +1821,14 @@ db.ex(
     mk_super_query('body: alice; tag: She; title: of; children')
     )
 # -----------
+print(db.ex(mk_super_query('tag: indignantly', ['body']))[0][0])
 # ===========
 ta = db.ex(
     mk_super_query('body: alice; children; tag: she')
     )
 len(ta)
 # -----------
+db.ex('select * from tags')
 print(mk_super_query('body: alice; tag: She; title: of; children'))
 # ===========
 tb = db.ex('''
@@ -1861,7 +1863,41 @@ print(mk_super_query('body: alice; children; tag: she'))
 # ===========
 db.ex(mk_super_query('body: alice; children; tag: she'))
 # -----------
-
+# ===========
+db.ex('''
+    with
+    body_notes(note_id) as (
+        select rowid from notes_fts
+        where body match "alice"
+    )
+    ,
+    tagged_notes(note_id) as (
+        select note_id from note_tags
+        where tag_id = (
+            select id from full_tag_paths where full_tag_path = "She"
+        )
+    ),
+    with
+    title_notes(note_id) as (
+        select rowid from notes_fts
+        where title match "of"
+    )
+    ,
+    children_notes(parent_note_id, note_id) as (
+        select parent_note_id, child_note_id
+        from note_links
+    )
+    select z.id,z.title
+    from body_notes a
+    inner join tagged_notes b
+    on a.note_id = b.note_id
+    inner join title_notes c
+    on b.note_id = c.note_id
+    inner join children_notes d
+    on c.note_id = d.parent_note_id
+    inner join notes z on d.note_id = z.id
+    ''')
+# -----------
 # > Fuzzy note id
 
 # ===========

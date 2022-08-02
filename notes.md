@@ -206,7 +206,6 @@ This is a link: [Link](/20201016154437)
   - This ... could be non-trivial ... especially with the FTS ...
   - How combine complex queries with FTS queries?  Sub queries and joins?
   - How use tags with other queries?  _may want to rethink the tags model ... depends on performance at scale really_
-    + 
     + instead, could leverage FTS and have a tags column with comma separated tags (including tag paths with slashes: `parent_tag/child_tag`) (using either FTS or `LIKE` matching: https://sqlite.org/lang_expr.html#the_like_glob_regexp_and_match_operators)
       * insertion of tag strings could by managed by python, checking the existing tag tables and parent joins, and inserting as appropriate.  But then updating and deleting notes and/or tags could get very tricky.
     + Instead ... could flip the process:
@@ -328,8 +327,20 @@ loader.exec_module(mod)
   - [X] batch add multiple files to database (taking care of linking issues)
   - [ ] find all files ahead of database (using mod time and os modtime?)
   - [ ] batch add all files ahead of database
+- [ ] Clean up tag paths (especially in `add_tag_path`)
+  * probably best to use `pathlib.PurePath` as it's got clean interfaces to parents etc
 * [ ] Delete notes
   * [ ] Remove links
++ [ ] Managing Duplicate notes (created by accident lets say)
+  + [ ] Merge Notes into one
+    + Pick one as survivor
+    + put contents of deprecated into survivor
+    + add tags of deprecated
+    + find all links to deprecated and change to survivor (_will require overwriting contents of notes!_)
+    + Delete deprecated
+- [ ] Check for duplicate title when making a new note!
+- [ ] Enable quickly creating an empty note as a link in the current note for when you know a topic/idea deserves a note which will be filled up over time or in the future and so you're ensuring that a link is laid for the current note and that the new note is established for the future.
+  * Works together with checking for duplicate notes (see above)!
 * [ ] Change note title
   * Because of the binding between note files and notes in the database, this may not be trivial
     - `update_note()` works by updating all fields for the record with the provided note id.  So, for this function, relying on a constant note_id is viable, *so long as a valid file path is provided with the current version of the note, even with a changed title*.
@@ -344,6 +355,7 @@ loader.exec_module(mod)
     - Updating a note, which is done by starting with the file, will hit an error if the title has been changed (even though the id is unchanged).
 + [ ] Delete Tags
   * Only if not used in any notes!
++ [ ] add a description column to `tags` table as a helpful reminder/reinforcer of the meaning/purpose of tags
 - [ ] add to references table
 - [ ] create assets and asset links tables
 - [ ] Look into adding indices for columns likely to be used heavily in queries
@@ -364,6 +376,10 @@ loader.exec_module(mod)
   * [X] Add sql command for straight sql
   * [X] add custom query command for custom short hand queries
   * [X] Add update specific note/file command
+  * [ ] Add command that starts a python REPL and imports the zekell module ready for interactive usage of the module itself
+    - Can maybe just run `python -i` on the module itself?
+    - Or maybe some code that also sets up a connection to the database
+    - Same for sqlite shell?
 - [X] Wrap functionality around note staging (mostly CLI)
   * Stage note when opened through CLI so that can be readily updated once edited by external app
   * List all staged notes
@@ -380,14 +396,27 @@ loader.exec_module(mod)
       - Eg: all notes that are children of note X, or all notes that are children of the notes from the previous component ... how to string all of this together?  _best approach is probably to put together various specific queries that are obviously useful, to get a feel for how it can all be put together_
       - Well, _passive_ filtering is done just by joining (kinda easy).  Ordinarily, active filtering would involve a `WHERE` within a subquery or CTE.
   * [X] Allow for simple _children of_ and _parents of_ passive components
-  * [ ] Modify the `title` and `body` components to always be one CTE
+  * [ ] Allow for more flexible and powerful text search in `title` and `body` queries:
+    * Use `like` and `glob` on plain columns (not FTS) (see [documentation](https://www.sqlite.org/lang_expr.html#the_like_glob_regexp_match_and_extract_operators))
+      - Would have to decide on how conveyed in the query text and then combined with other queries
+        + Probably just require the user to provide 'like' or 'glob' and understand what that means
+        + `like`: `%` and `_` allowed
+        + `glob`: `*` (instead of `%`), and other `unix` symbols? (`?`, `[]`)?
+        + script can scan for these key words, and if present, use them instead of the FTS table.
+      - Provide interface to use the `bm25()` function to rank search matches (see [documentation](https://www.sqlite.org/fts5.html#the_bm25_function))
+        + Maybe have on by default?  Use keyword at end of search?
+        + Maybe snippet and highlight are useful too? ... to show the reason why a particular hit shows as a match ... provide some context etc.
+        + Does this get into fuzzy search territory where a bad match is returned nonetheless?
+      - Use (?) the **experimental** trigram tokeniser (see [documentation](https://www.sqlite.org/fts5.html#the_experimental_trigram_tokenizer), released `2020-12`: [release notes](https://www.sqlite.org/releaselog/3_34_0.html))
+        + enables essentially close to fuzzy search that should be performant for any substring of three characters or more with `glob`/`like` functionality too!
+  * [ ] Relatedly, Modify the `title` and `body` components to always be one CTE
     * At the moment, they are separate and are joined.
     * **for some reason**, this is a sub-optimal join, performing worse than other queries by orders of magnitude.
     * But, if both `where` statements are put into a single CTE, performance is excellent again.
     * Have some code that looks for both `title` and `body` and constructs a single CTE
     * To combine them requires only a single `where` statement:
       - `where title match "alice" and body match "queen"`
-      - more fully ... 
+      - more fully ... see below ...
 
 ```sql
 with
@@ -410,7 +439,7 @@ inner join notes z on a.note_id = z.id
       + Harder to query _what are all the tags in the database_ then ... so maybe both?
       + To remove the slash (`/`) from token separators see [docs on unicode tokenizer options](https://www.sqlite.org/fts5.html#unicode61_tokenizer) where characters can be added to the set of token and separator characters.  With this, whitespace would be used to separate tags and slashes would be retained as part of a single token.
       + Boolean queries would become simpler, using `sql` booleans on `like "%TAG%"` statements (see [examples in this blog post](http://howto.philippkeller.com/2005/04/24/Tags-Database-schemas/))
-    - Including tag children in query (ie, tag `software` includes `software/theory`)
+    - [ ] Including tag children in query (ie, tag `software` includes `software/theory`)
       + Probably best as a separate action from direct tag search ... simple recursive?
         + first step is to find all tags that are child of specified tag
         + Then, a simple `where tag_id in (...)` should do it.
@@ -499,7 +528,6 @@ select note_id from all_children
 ```
 
 
-
   * [ ] ensure custom query interface is protected from sql insertion attacks
 
 
@@ -511,6 +539,9 @@ select note_id from all_children
     - running and timing queries
       + Probably just use `zekell` CLI with `q` search machinery.
     - Setting up and tearing down notes
+* [ ] Run performance tests on a subset of wikipedia after scraping (maybe scrape n notes from philosophy) ... maybe just take the introductions of each page only.
+  - Wikipedia's database is available for download [here](https://en.wikipedia.org/wiki/Wikipedia:Database_download)
+  - _Simple English wikipedia_ [available from here](https://meta.wikimedia.org/wiki/Data_dump_torrents#English_Wikipedia) might be a good bet ... whole wiki database is approx ~200MB.  This also appears to be `XML` format, so no need for `mysql`
 
 
 * [X] Allow for fuzzy search over note ids??
@@ -537,6 +568,11 @@ select note_id from all_children
     - allow for WAL and multiple connections, which requires another pragma ([see documentation](https://www.sqlite.org/wal.html))
     - requires either hacking the stdlib (too much) or using bottle (minimal)
 
+* [ ] Create a frontend (browser based) !!
+  * Need a markdown system
+    - eg, some markdown editors:
+      + https://github.com/benweet/stackedit
+
 * [X] Change modified time column to float (?)
   * Idea is to enable easier sorting in the database?
   * but sqlite seems quite happy to sort text.  In fact, it seems faster compared to sorting floats, which makes some sense as floating point might introduce some problems. ... **Note done, left as text!!**
@@ -549,4 +585,19 @@ select note_id from all_children
       - On selection, another list input (for `tag` for instance, where there are limited options), or, a general text input.
         + For `id`, a follow-up list input might make sense, which returns the list of possible options if there are more than one (or even when there is only one, just to confirm)
 
+
+# Ideas
+
+* Track web-links separately
+  - Separate table: `ID | title | URL | note_id (foreign key)`
+  - Parse notes for `markdown` links, taking `[this is a link]` text as title.
+  - _Maybe ..._ full text on the title and URL
+    + where the URL would probably require a custom tokeniser (separate by slashes and/or dots)
+  - _WHY_?
+    + Search for notes based on containing a specific URL (`stackoverflow`, `PLOSone`, eg)
+    + Retrieve all links that are children of certain notes
+      * more complex, as have to scan all leaves
+      * EG, all links under `python`.
+* Create terminal browser/viewer with `Rich`/`Textual`
+* Web server, multi-user, one `SQLite` db file per user, backedup to `S3` with `Litestream`?
 
