@@ -23,9 +23,10 @@ SCHEMA_PATH = Path(__file__).parent / Path('./schema.sql')
 # > Config
 
 default_config = {
-    "zk_paths": {
-        "main": "~/zekell"
-    },
+    "zkl_path": "~/zekell",
+    # "zk_paths": {
+    #     "main": "~/zekell"
+    # },
     "current_zk_path": "main",
     "note_extension": ".md",
     # "editor_shell_command": "vim, {}"
@@ -61,7 +62,8 @@ config = get_config()
 # down to functions
 
 NOTE_EXTENSION = config['note_extension']
-ZK_PATH = Path(config['zk_paths'][config['current_zk_path']]).expanduser()
+ZK_PATH = Path(config['zkl_path']).expanduser()
+# ZK_PATH = Path(config['zk_paths'][config['current_zk_path']]).expanduser()
 ZK_DB = Path('zekell.db')
 ZK_DB_PATH = ZK_PATH / ZK_DB
 

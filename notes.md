@@ -600,4 +600,9 @@ select note_id from all_children
       * EG, all links under `python`.
 * Create terminal browser/viewer with `Rich`/`Textual`
 * Web server, multi-user, one `SQLite` db file per user, backedup to `S3` with `Litestream`?
+* Encryption (??!!)
+  - Possible with either `SEE` (the official paid sqlite3 offering) or `sqlcipher` [homepage](https://www.zetetic.net/sqlcipher/)
+  - Either seem to retain all the functionality of `sqlite3` but require only a password (to encrypt or decrypt).
+  - Would require compiling from source.
+  - See [this blog post on compiling a new `sqlite3` for use with `python`](https://charlesleifer.com/blog/compiling-sqlite-for-use-with-python-applications/) and [the standalone python sqlite3 driver](https://github.com/coleifer/pysqlite3) useful for custom `sqlite` installations.
 
