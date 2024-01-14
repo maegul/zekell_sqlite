@@ -13,14 +13,14 @@ from pathlib import Path
 import re
 import subprocess
 # 3.5+ then!
-from typing import Optional, Iterable, Tuple, Union, overload
+from typing import Optional, List, Iterable, Tuple, Dict, Union, overload
 import sqlite3 as sql
 
 # when package, needs to be managed
 # SCHEMA_PATH = Path('./schema.sql')
 SCHEMA_PATH = Path(__file__).parent / Path('./schema.sql')
 
-# > Config
+# # Config
 
 default_config = {
     "zkl_path": "~/zekell",
@@ -55,7 +55,7 @@ def get_config():
 
 config = get_config()
 
-# >> Set global consts from config
+# ## Set global consts from config
 
 # MAIN ONE IS ZK_PATH ... how to deal with path depends on how this library is called
 # probably best to contextualise the path at calling before passing note_path variables
@@ -67,7 +67,7 @@ ZK_PATH = Path(config['zkl_path']).expanduser()
 ZK_DB = Path('zekell.db')
 ZK_DB_PATH = ZK_PATH / ZK_DB
 
-# > Objects & Consts
+# # Objects & Consts
 
 note_name_template = Template('$id $title').substitute
 note_file_name_template = Template('$id $title'+NOTE_EXTENSION).substitute
@@ -82,6 +82,7 @@ front_matter_pattern = re.compile(r'(?s)^---\n(.+?)\n---')
 # Must have a title (at least one character) and no id, but a slash!
 # new_link_pattern = re.compile(r'\[([\w\- ]+)\]\(\/\)')
 
+# ## Object classes
 
 class DB:
 
@@ -123,6 +124,7 @@ class DB:
 
         if isinstance(query, (list, tuple)):
             # check that arguments appropriate for batch operation
+            # possible to rely on sqlite errors for this?
             if not (
                     (
                         isinstance(params, (list, tuple))
@@ -200,9 +202,12 @@ class Note:
 class NoteError(ValueError):
     pass
 
-# > Table Creation
+# # Table Creation
 
-def db_connection(db_path: Path, new: bool = False) -> DB:
+def db_connection(
+        db_path: Path, new: bool = False,
+        use_row_obj: bool = True
+        ) -> DB:
 
     if not db_path.exists() and not new:
         raise ValueError('Db Path exists already!')
@@ -210,6 +215,12 @@ def db_connection(db_path: Path, new: bool = False) -> DB:
         db_path.touch()
 
     conn = sql.connect(db_path)
+    # ## ! Use sql.Row
+    if use_row_obj:
+        # turns output of fetch functions to sql.Row objects
+        # Provides both positional and key(headers) based access
+        # ... should be fine with rest of code base but maybe not?
+        conn.row_factory = sql.Row
     cursor = conn.cursor()
     db = DB(conn, cursor)
 
@@ -222,6 +233,8 @@ def db_connection(db_path: Path, new: bool = False) -> DB:
 
     return db
 
+def convert_rows_to_dicts(results: List[sql.Row]) -> List[Dict]:
+    return [dict(r) for r in results]
 
 def db_init(db: DB):
     with open(SCHEMA_PATH, 'r') as f:
@@ -236,9 +249,9 @@ def db_init(db: DB):
 
 
 
-# > Add to Tables
+# # Add to Tables
 
-# >> Notes
+# ## Notes
 
 def make_mod_time() -> float:
     "timestamp of right now in UTC (for recording modified times)"
@@ -330,7 +343,7 @@ def make_batch_new_note_ids(db: DB, n: int) -> list:
     return new_ids
 
 
-# >> Links
+# ## Links
 
 
 def add_note_link(db: DB, parent_id: int, child_id: int):
@@ -393,7 +406,7 @@ def update_note_links(
             )
 
 
-# >> Tags
+# ## Tags
 
 def check_root_tag_unique(db: DB, tag_name: str):
 
@@ -569,7 +582,7 @@ def update_note_tags(db, note_id: int, tag_ids: Union[int, list, tuple]):
 
 
 
-# >> Parsing notes
+# ## Parsing notes
 
 
 def parse_note_body(body: str) -> Tuple[str, list, list]:
@@ -821,7 +834,7 @@ def delete_note(db: DB, note_path: Path):
     note_path.unlink()
 
 
-# >> Staging and Opening Notes
+# ## Staging and Opening Notes
 
 def open_note(db: DB, note_path: Path):
     open_note_command = [
@@ -839,9 +852,9 @@ def open_note(db: DB, note_path: Path):
 
 
 
-# > query notes
+# # query notes
 
-# >> Fuzzy id
+# ## Fuzzy id
 
 def get_note_ids_from_fuzzy_id(db: DB, fuzzy_id: int) -> Optional[Union[list, Path]]:
 
@@ -855,7 +868,13 @@ def get_note_ids_from_fuzzy_id(db: DB, fuzzy_id: int) -> Optional[Union[list, Pa
         note_path = ZK_PATH / Path(make_note_file_name(NoteName(*note_cands[0])))
         return note_path
 
-# >> CTEs
+# maybe not sql.Row forever in the return type (maybe will go back to tuples)
+def get_note_text_from_id(db: DB, id: int) -> List[sql.Row]:
+
+    note_data = db.ex('select * from notes where id = ?', [id])
+    return note_data
+
+# ## CTEs
 
 def id_cte(note_id: int):
     "CTE for selecting notes by tail of note_id"
@@ -992,7 +1011,7 @@ def tag_and_cte(tags: str):
     '''
     return dedent(cte)
 
-# >> CTE keywords to functions maping
+# ## CTE keywords to functions maping
 
 # just single characters from alphabet ... could maybe create a mapping
 cte_aliases = list(string.ascii_lowercase)
@@ -1021,7 +1040,7 @@ cte_table_name_map = {
     'tag_and': 'tagged_and_notes'
 }
 
-# >>> CTE join constraints
+# ### CTE join constraints
 
 # join constraint for ordinary note_id-on-note_id CTEs
 # all have a basic note_id on note_id join as all the filtering occurs WITHIN the CTE
@@ -1058,7 +1077,7 @@ def query_tag_redirect(parsed_q: dict):
     return parsed_q
 
 
-# >> Full query
+# ## Full query
 
 def mk_super_query(q: str, notes_cols: Optional[list] = None):
     '''
@@ -1113,12 +1132,12 @@ def mk_super_query(q: str, notes_cols: Optional[list] = None):
 
     return sq
 
-# > Fancy Functions
+# # Fancy Functions
 
 # apply tag to all children of current note
 
 
-# > CLI
+# # CLI
 
 def display_rows(db: DB, result: list):
 
@@ -1331,7 +1350,7 @@ def main():
     subparsers = parser.add_subparsers(
         dest='sub_command', title='Sub Commands')
 
-    # >> Config
+    # ## Config
 
     ap_config = subparsers.add_parser('config', description='Configuration',
         help='View or manage configuration')
@@ -1342,7 +1361,7 @@ def main():
         action='store_true',
         help="Create default config file to allow user customisation")
 
-    # >> Initialisation
+    # ## Initialisation
 
     ap_init = subparsers.add_parser('init', description='Initialisation',
         help="Initialise your Zekell")
@@ -1350,12 +1369,12 @@ def main():
         action='store_true',
         help='Print current state for initialisation')
 
-    # >> Locate
+    # ## Locate
 
     _ = subparsers.add_parser('locate', description='Locate',
         help="Locate current Zekell, print path")
 
-    # >> Add New Note
+    # ## Add New Note
 
     ap_add = subparsers.add_parser('add', description='Add New Note',
         help='Add a new note')
@@ -1363,32 +1382,32 @@ def main():
         help="Title of the new note",
         )
 
-    # >> Staged notes
+    # ## Staged notes
     ap_staged = subparsers.add_parser('staged', description='Staged Notes',
         help='Managed staged notes')
     ap_staged.add_argument('-u', '--update',
         action = 'store_true',
         help='Update all staged notes from file')
 
-    # >> Open Notes
+    # ## Open Notes
     ap_open = subparsers.add_parser('open', description='Open note in editor',
         help='Open note by note_id in editor in configuration')
     ap_open.add_argument('note_id',
         help='note id to open, can be tail of id which will succeed if possible or print multiples',
         type=int)
 
-    # >> Update Note
+    # ## Update Note
     ap_update = subparsers.add_parser('update', description='Update note',
         help='Update note by note_id ')
     ap_update.add_argument('note_id',
         help='note_id of note to update, can be tail which can be tail of full id as with open',
         type=int)
 
-    # >> Update all notes
+    # ## Update all notes
     ap_update_all = subparsers.add_parser('update-all', description='Update or add all notes',
         help='All notes in zekell path will be added or if modified since last updated, updated')
 
-    # >> Run SQL Query
+    # ## Run SQL Query
 
     ap_query = subparsers.add_parser('sql', description='Run Query',
         help='Run a sql select query against the database')
@@ -1398,7 +1417,7 @@ def main():
         help='Number to limit return by (default 100)',
         default = 100)
 
-    # >> Run Search Query
+    # ## Run Search Query
     # uses basic custom format
     ap_search = subparsers.add_parser('q', description='Search Notes',
         help='Run a search for notes')
