@@ -5,10 +5,35 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>dummy</title>
 
+	<!-- # Styles -->
+
 	<style type="text/css">
-		#search_results_div {
-			width: 40em;
+
+/*		* {
+			border: 1px solid red;
 		}
+*/
+		html, body {
+			height: 100%;
+			margin: 0;
+		}
+
+		#zkl_main_window {
+			display: flex;
+			flex-direction: row;
+			height: 100%;
+			width: 100%;
+		}
+
+		#zkl_search_pane {
+			width: 40em;
+			height: 100%;
+		}
+
+		#zkl_note_view{
+			height: 100%;
+		}
+
 		.search_result {
 			display: flex;
 			justify-content: space-between;
@@ -24,6 +49,11 @@
 		.search_result_preview_button{
 			height: 1.5em;
 		}
+
+		.note_view_body {
+			height: 90%
+		}
+
 	</style>
 
 </head>
@@ -34,23 +64,35 @@
 <div id='content'></div>
  -->
 
-<h1>General Query</h1>
 
-<form id='general_query_form'>
-	<input type="text" name="query">
-	<button type="submit">search</button>
-</form>
-<!-- <form id='general_query_form' action="http://0.0.0.0:5000/general_search", method="post">
-	<input type="search" name="query">
-	<button type="submit">search</button>
-</form>
- -->
+<div id="zkl_main_window">
 
-<div id='search_results_div'></div>
+	<div id="zkl_search_pane">
+		<h3>Search</h3>
+		<form id='zkl_general_query_form'>
+			<input type="text" name="query">
+			<button type="submit">search</button>
+		</form>
+
+		<div id='zkl_search_results_div'></div>
+	</div>
+
+	<div id="zkl_note_view">
+		<h1 class="note_view_title"></h1>
+		<textarea
+			class="note_view_body"
+			cols=120
+			style="resize: none;"
+			autocomplete="off"
+			readonly
+			></textarea>
+	</div>
+</div>
+
 
 <!-- # Templates -->
 
-<template id="template_result_row">
+<template id="zkl_template_result_row">
 	<div class="search_result" data-note-id="">
 		<p class="search_result_label"></p>
 		<button class="search_result_preview_button">P</button>

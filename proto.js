@@ -1,31 +1,6 @@
 console.log('hello world')
 
-
-// var count = 0
-
-// var action_but = document.querySelector('#but_fetch')
-// var content = document.querySelector('#content')
-
-// console.log('button element?', action_but)
-
-// action_but.addEventListener(
-// 	'click',
-// 	() => {
-// 		count = count + 1
-// 		// content.innerHTML = count
-
-// 		fetch("http://0.0.0.0:5000/jsontest")
-// 			.then((response) => response.json())
-// 			.then((body) => {
-// 				console.log(body)
-// 				// just add more inner divs?
-// 				content.innerHTML = content.innerHTML + '<br>' + count + ': ' + body['content']
-// 			}
-// 			)
-// 			.catch((error) => console.log(error));
-
-// 	}
-// )
+const base_url = "http://0.0.0.0:5000"
 
 // > Utils
 
@@ -37,6 +12,20 @@ function removeAllChildNodes(node) {
 
 // > Template functions
 
+function update_note_view(note_data) {
+	const note_view = document.getElementById('zkl_note_view')
+
+	const title = note_view.querySelector(".note_view_title")
+	const body = note_view.querySelector(".note_view_body")
+	removeAllChildNodes(title)
+	// removeAllChildNodes(body)
+	body.value = ""
+
+	title.textContent = note_data['title']
+	// body.textContent = note_data['body']
+	body.value = note_data['body']
+}
+
 function add_preview_event_listener(button, note_id){
 
 	button.addEventListener(
@@ -45,12 +34,11 @@ function add_preview_event_listener(button, note_id){
 			// const note_id = value.parentNode.getAttribute('data-note-id')
 
 			const url_params = new URLSearchParams({id: parseInt(note_id)})
-			fetch("http://0.0.0.0:5000/note?" + url_params)
+			fetch(`${base_url}/note?` + url_params)
 			.then(response => response.json())
 			.then(data => {
 				// Handle the response data and update the page
-				const preview = document.body.appendChild(document.createElement('div'))
-				preview.innerHTML = data['body']
+				update_note_view(data)
 			})
 			.catch(error => {
 				console.error("Error:", error);
@@ -62,7 +50,7 @@ function add_preview_event_listener(button, note_id){
 
 function make_result_row(data) {
 
-	const template = document.querySelector('#template_result_row')
+	const template = document.querySelector('#zkl_template_result_row')
 
 	const result = template.content.cloneNode(true)
 	const result_cont = result.querySelector('div')
@@ -81,7 +69,7 @@ function make_result_row(data) {
 
 function update_search_results(data){
 	// console.log('search data', data)
-	const search_results_div = document.getElementById('search_results_div')
+	const search_results_div = document.getElementById('zkl_search_results_div')
 	removeAllChildNodes(search_results_div)
 
 	for (var i = data.length - 1; i >= 0; i--) {
@@ -93,7 +81,7 @@ function update_search_results(data){
 
 }
 
-document.getElementById("general_query_form")
+document.getElementById("zkl_general_query_form")
 	.addEventListener("submit", function (event) {
 		event.preventDefault();
 
@@ -101,7 +89,7 @@ document.getElementById("general_query_form")
 
 		// console.log('form data', formData)
 
-		fetch("http://0.0.0.0:5000/general_search", {
+		fetch(`${base_url}/general_search`, {
 			method: "POST",
 			body: formData,
 		})
