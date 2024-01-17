@@ -27,63 +27,69 @@ console.log('hello world')
 // 	}
 // )
 
+// > Utils
+
+function removeAllChildNodes(node) {
+	while (node.firstChild) {
+		node.removeChild(node.firstChild)
+	}
+}
+
+// > Template functions
+
+function add_preview_event_listener(button, note_id){
+
+	button.addEventListener(
+		'click',
+		function (event) {
+			// const note_id = value.parentNode.getAttribute('data-note-id')
+
+			const url_params = new URLSearchParams({id: parseInt(note_id)})
+			fetch("http://0.0.0.0:5000/note?" + url_params)
+			.then(response => response.json())
+			.then(data => {
+				// Handle the response data and update the page
+				const preview = document.body.appendChild(document.createElement('div'))
+				preview.innerHTML = data['body']
+			})
+			.catch(error => {
+				console.error("Error:", error);
+			});
+		}
+	)
+
+}
+
+function make_result_row(data) {
+
+	const template = document.querySelector('#template_result_row')
+
+	const result = template.content.cloneNode(true)
+	const result_cont = result.querySelector('div')
+	const result_text = result.querySelector('p')
+	const result_preview_button = result.querySelector('button')
+
+	result_cont.setAttribute('data-note-id', data['id'])
+	result_text.innerHTML = `${data['title']} (${data['id']})`
+	add_preview_event_listener(result_preview_button, data['id'])
+
+	return result
+}
+
+
+// > Main
+
 function update_search_results(data){
 	// console.log('search data', data)
 	const search_results_div = document.getElementById('search_results_div')
-	search_results_div.innerHTML = ""
+	removeAllChildNodes(search_results_div)
 
 	for (var i = data.length - 1; i >= 0; i--) {
-		// data-* attributes always strings?  In HTML, probably yes!
-		const result = `
-			<div class="search_result" data-note-id="${data[i]['id']}">
-				<p class="search_result_label">${data[i]['title']} (${data[i]['id']})</p>
-				<button class="search_result_preview_button">P</button>
-			</div>
-		`
-		search_results_div.insertAdjacentHTML('beforeend', result)
-		// const result = document.createElement('p')
-		// result.textContent = `${data[i][1]} (${data[i][0]})`
-		// result.setAttribute('data-note-id', data[i][0])
-		// search_results_div.appendChild(result)
+
+		let result_data = data[i]
+		const result_row = make_result_row(result_data)
+		search_results_div.appendChild(result_row)
 	}
-
-	const preview_buttons = document.querySelectorAll('.search_result_preview_button')
-	// const preview_buttons = document.getElementsByClassName('search_result_preview_button')
-	console.log(preview_buttons)
-	preview_buttons.forEach(
-		function (value) {
-			value.addEventListener(
-				'click',
-				function (event) {
-					const note_id = value.parentNode.getAttribute('data-note-id')
-
-					const url_params = new URLSearchParams({id: parseInt(note_id)})
-					fetch("http://0.0.0.0:5000/note?" + url_params)
-					.then(response => response.json())
-					.then(data => {
-						// Handle the response data and update the page
-						console.log(data);
-						const preview = document.body.appendChild(document.createElement('div'))
-						preview.innerHTML = data['body']
-						// CSS for floating preview:
-							// position: absolute;
-							// top: 20%;
-							// background-color: #EEE;
-							// height: 50%;
-							// width: 50%;
-							// margin-left: 15%;
-							// overflow: auto;
-							// white-space: pre-wrap;
-							// overflow: auto;
-					})
-					.catch(error => {
-						console.error("Error:", error);
-					});
-
-				}
-			)
-		}
-	)
 
 }
 

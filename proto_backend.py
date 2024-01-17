@@ -30,7 +30,8 @@ new_db = lambda : zkl.db_connection(zkl.ZK_DB_PATH, use_row_obj=USE_ROW_OBJ)
 # domain from which requests will be made (port necessary?)
 ORIGIN = 'http://localhost:8000'
 
-# # After Request hook to allow CORS
+
+# # ALLOW CORS: After Request hook to allow CORS
 
 @app.after_request
 def apply_CORS_headers(response: flask.Response):

@@ -48,6 +48,23 @@
 
 <div id='search_results_div'></div>
 
+<!-- # Templates -->
+
+<template id="template_result_row">
+	<div class="search_result" data-note-id="">
+		<p class="search_result_label"></p>
+		<button class="search_result_preview_button">P</button>
+	</div>
+</template>
+
+<!-- Note a bad idea ... maybe better off all within js files though -->
+<!-- <script type="text/javascript">
+	function make_new_result_row(template){
+		const new_result = result_template.cloneNode(true)
+	}
+</script>
+ -->
+
 </body>
 
 <script type="text/javascript" src="proto.js"></script>

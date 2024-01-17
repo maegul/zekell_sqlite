@@ -605,4 +605,13 @@ select note_id from all_children
   - Either seem to retain all the functionality of `sqlite3` but require only a password (to encrypt or decrypt).
   - Would require compiling from source.
   - See [this blog post on compiling a new `sqlite3` for use with `python`](https://charlesleifer.com/blog/compiling-sqlite-for-use-with-python-applications/) and [the standalone python sqlite3 driver](https://github.com/coleifer/pysqlite3) useful for custom `sqlite` installations.
+* "Fuzzy links" ... for when the location of the content could change down the line.  For example, when you're referring to a heading in a note and that heading and its content could change or be moved to its own note down the line.
+  * Create syntax that can behave just like a link (eg `[my note](/123123123123)`) but which specifies an additional textual fragment that will function as a search term for the target note and all its children.  This way the reference can be kept "fuzzy".  Essentially, it refers to the textual fragment's occurrence anywhere in the tree of notes from the target onwards.
+  * Keep it an optional function that may be called on a link and which will look for the required syntax.  This way the general syntax need not be prevented from general usage by the user.
+  * `[my note](/123123123123), "my heading"`.  `For more demonstrations, see [my note](/123123123123), "Demos", where variations on this are elaborated on.`
+  * `\[.*\]\(\/\d{12,14}\),\s{1,4}".*"`
+  * `[my note](/123123123123), "my heading"`.  `For more demonstrations, see [my note](/123123123123) ("Demos"), where variations on this are elaborated on.`
+  * `\[.*\]\(\/\d{12,14}\)\s{1,4}\(".*\")`
+    * *EG*: [my note](/123123123) ("Demos")
+
 
