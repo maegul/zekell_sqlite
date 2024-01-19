@@ -67,6 +67,36 @@ function make_result_row(data) {
 
 // > Main
 
+// >> Search Pane visibility
+
+const search_pane_button = document.getElementById('zkl_search_pane_tab')
+search_pane_button.addEventListener("click", function (event) {
+	const search_pane_main = document.getElementById('zkl_search_pane')
+	const note_view_pane = document.getElementById('zkl_note_view')
+	const visibility = search_pane_main.style.visibility
+
+	console.log('search pane button', visibility)
+
+	if (visibility != "hidden") {
+		search_pane_main.setAttribute('zkl-initial-width', search_pane_main.style.width)
+		search_pane_main.style.width = "0px";
+		search_pane_main.style.visibility = "hidden";
+		// adjust flex flow of note view pannel
+		note_view_pane.setAttribute(
+			'zkl-initial-justifyContent', note_view_pane.style.justifyContent)
+		note_view_pane.style.justifyContent = "space-around"
+	} else {
+		search_pane_main.style.width = search_pane_main.getAttribute('zkl-initial-width');
+		search_pane_main.style.visibility = "";
+
+		note_view_pane.style.justifyContent = note_view_pane.getAttribute('zkl-initial-justifyContent')
+	}
+
+})
+
+
+// >> Search Results
+
 function update_search_results(data){
 	// console.log('search data', data)
 	const search_results_div = document.getElementById('zkl_search_results_div')

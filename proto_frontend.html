@@ -17,23 +17,6 @@
 			height: 100%;
 			margin: 0;
 		}
-
-		#zkl_main_window {
-			display: flex;
-			flex-direction: row;
-			height: 100%;
-			width: 100%;
-		}
-
-		#zkl_search_pane {
-			width: 40em;
-			height: 100%;
-		}
-
-		#zkl_note_view{
-			height: 100%;
-		}
-
 		.search_result {
 			display: flex;
 			justify-content: space-between;
@@ -65,27 +48,55 @@
  -->
 
 
-<div id="zkl_main_window">
+<div id="zkl_main_window"
+	style = "	display: flex;
+				flex-direction: row;
+				height: 100%;
+				width: 100%;
+			">
 
-	<div id="zkl_search_pane">
-		<h3>Search</h3>
-		<form id='zkl_general_query_form'>
-			<input type="text" name="query">
-			<button type="submit">search</button>
-		</form>
+	<div id="zkl_search_pane"
+		style="	display: flex;
+				flex-direction: row;
+				overflow-x: hidden;
+				width: 40em;
+				height: 100%;
+			">
 
-		<div id='zkl_search_results_div'></div>
+		<div id="zkl_search_pane_main">
+			<h3>Search</h3>
+			<form id='zkl_general_query_form'>
+				<input type="text" name="query">
+				<button type="submit">search</button>
+			</form>
+			<div id='zkl_search_results_div'></div>
+		</div>
+
 	</div>
 
-	<div id="zkl_note_view">
-		<h1 class="note_view_title"></h1>
-		<textarea
-			class="note_view_body"
-			cols=120
-			style="resize: none;"
-			autocomplete="off"
-			readonly
-			></textarea>
+	<div id=zkl_search_pane_tab style="width: 2em; padding: 5px;">
+		<button><></button>
+	</div>
+
+	<div id="zkl_note_view"
+		style="	height: 100%;
+				flex-grow: 1;
+				display: flex;
+				flex-direction: row;
+				justify-content: flex-start;
+			">
+		<div id="zkl_note_view_inner">
+
+			<h1 class="note_view_title"></h1>
+			<textarea
+				class="note_view_body"
+				cols=120
+				style="resize: none;"
+				autocomplete="off"
+				readonly
+				></textarea>
+
+		</div>
 	</div>
 </div>
 
@@ -95,7 +106,7 @@
 <template id="zkl_template_result_row">
 	<div class="search_result" data-note-id="">
 		<p class="search_result_label"></p>
-		<button class="search_result_preview_button">P</button>
+		<button class="search_result_preview_button">></button>
 	</div>
 </template>
 
