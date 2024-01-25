@@ -17,22 +17,58 @@
 			height: 100%;
 			margin: 0;
 		}
+		.search_query {
+			background: lightsteelblue;
+			padding: 5px;
+			margin: 5px;
+			border-radius: 5px;
+		}
 		.search_result {
+			box-sizing: border-box;
+			width: 100%;
 			display: flex;
-			justify-content: space-between;
+			justify-content: space-around;
 			align-items: center;
 			padding: 0.1em;
-			margin: 0.4em;
+			margin-top: 0.2em; margin-bottom: 0.2em;
 			border: 1.5px solid #BBB;
 		}
 		.search_result_label {
 			width: 80%;
 			margin: 3px;
 		}
-		.search_result_preview_button{
+		.search_result_button {
 			height: 1.5em;
 		}
+		.search_result_active_button {
+			background-color: white;
+		}
 
+		.explore_source_note {
+			background: #ececec;
+		}
+
+		.explore_results_indicator {
+
+		}
+
+		#zkl_search_pane {
+			border-right: 1px solid lightgrey;
+		}
+
+		.search_pane_tab_button {
+			border: none;
+			padding: 0px; /* helps keep dashes placed evenly*/
+			border-radius: 3px;
+			background-color: #ececec;
+			color: #a1a1a1;
+			height: 4em;
+			width: 1em;
+		}
+
+		.search_pane_tab_button:hover {
+			background-color: lightgray;
+		}
 		.note_view_body {
 			height: 90%
 		}
@@ -42,11 +78,7 @@
 </head>
 <body>
 
-<!-- <button id='but_fetch'> Click me</button>
-
-<div id='content'></div>
- -->
-
+<!-- # Layout -->
 
 <div id="zkl_main_window"
 	style = "	display: flex;
@@ -63,19 +95,31 @@
 				height: 100%;
 			">
 
-		<div id="zkl_search_pane_main">
-			<h3>Search</h3>
-			<form id='zkl_general_query_form'>
-				<input type="text" name="query">
-				<button type="submit">search</button>
-			</form>
-			<div id='zkl_search_results_div'></div>
+		<div id="zkl_search_pane_main"
+			style="	width: 100%;
+					display: flex;
+					flex-direction: column;
+					align-items: center;
+				">
+			<div class="search_query" style="width: 95%">
+				<h3>Search</h3>
+				<form id='zkl_general_query_form'>
+					<input type="text" name="query">
+					<button type="submit">search</button>
+				</form>
+			</div>
+			<div id='zkl_search_results_div' style="width: 95%"></div>
 		</div>
 
 	</div>
 
-	<div id=zkl_search_pane_tab style="width: 2em; padding: 5px;">
-		<button><></button>
+	<div id=zkl_search_pane_tab
+		style="	width: 2em;
+				display: flex;
+				flex-flow: column;
+				justify-content: center;
+			">
+		<button class="search_pane_tab_button">-<br>-<br>-</button>
 	</div>
 
 	<div id="zkl_note_view"
@@ -103,11 +147,25 @@
 
 <!-- # Templates -->
 
+<!-- ## Result Row -->
+
 <template id="zkl_template_result_row">
-	<div class="search_result" data-note-id="">
+	<div class="search_result">
 		<p class="search_result_label"></p>
-		<button class="search_result_preview_button">></button>
+		<div style="flex-grow: 2"></div>
+		<button class="search_result_button search_result_parents_button">^</button>
+		<button class="search_result_button search_result_children_button">v</button>
+		<button class="search_result_button search_result_preview_button">></button>
 	</div>
+</template>
+
+<!-- ## Explore Results Indicator -->
+
+<template id="zkl_template_explore_results_direction_indicator">
+	<div style="display: flex; flex-direction: row; justify-content: center;">
+		<div class="explore_results_indicator"></div>
+	</div>
+
 </template>
 
 <!-- Note a bad idea ... maybe better off all within js files though -->

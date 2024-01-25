@@ -48,18 +48,91 @@ function add_preview_event_listener(button, note_id){
 
 }
 
-function make_result_row(data) {
+function add_explore_event_listener(button, note_id, direction){
+
+	// direction should be either "children" or "parents"
+	// default to 'children' if falsy
+	direction = direction || 'children'
+
+	button.addEventListener(
+		'click',
+		function (event) {
+			console.log(`Explore ${note_id}`)
+			console.log(event)
+
+			const data = {
+				query: `id: ${note_id}; ${direction}`,
+				// query: `id: ${note_id}; children`,
+			}
+
+			fetch(
+				`${base_url}/general_search`,
+				{
+					method: "POST",
+					body: JSON.stringify(data),
+					headers: {
+						'Content-Type': 'application/json'
+					}
+				})
+			.then(response => response.json())
+			.then(data => {
+				// Handle the response data and update the page
+				console.log(data, direction)
+				// direction here is enclosed from above
+				update_search_results(data, event.target.parentElement, direction);
+			})
+			.catch(error => {
+				console.error("Error:", error);
+			});
+		}
+	)
+
+}
+
+function set_result_row_data(element, data) {
+
+	element.setAttribute('data-note-id', data['id'])
+	element.setAttribute('data-note-title', data['title'])
+
+	return element
+}
+
+function get_result_row_data(element) {
+
+
+	const data = {
+		id: element.getAttribute('data-note-id'),
+		title: element.getAttribute('data-note-title')
+	}
+
+	return data
+}
+
+function make_result_row(data, is_explore_source) {
 
 	const template = document.querySelector('#zkl_template_result_row')
 
 	const result = template.content.cloneNode(true)
 	const result_cont = result.querySelector('div')
 	const result_text = result.querySelector('p')
-	const result_preview_button = result.querySelector('button')
 
-	result_cont.setAttribute('data-note-id', data['id'])
-	result_text.innerHTML = `${data['title']} (${data['id']})`
+	set_result_row_data(result_cont, data)
+
+	result_text.textContent = `${data['title']}`
+	// result_text.textContent = `${data['title']} (${data['id']})`
+
+	const result_parents_button = result.querySelector('.search_result_parents_button')
+	const result_children_button = result.querySelector('.search_result_children_button')
+	const result_preview_button = result.querySelector('.search_result_preview_button')
+
+	add_explore_event_listener(result_parents_button, data['id'], 'parents')
+	add_explore_event_listener(result_children_button, data['id'], 'children')
 	add_preview_event_listener(result_preview_button, data['id'])
+
+	if (is_explore_source) {
+
+		result_cont.classList.add("explore_source_note")
+	}
 
 	return result
 }
@@ -97,10 +170,37 @@ search_pane_button.addEventListener("click", function (event) {
 
 // >> Search Results
 
-function update_search_results(data){
+function update_search_results(data, explore_source, explore_type){
 	// console.log('search data', data)
 	const search_results_div = document.getElementById('zkl_search_results_div')
 	removeAllChildNodes(search_results_div)
+
+	// for displaying the source of an explore action
+	console.log('explore', explore_source)
+
+	if (explore_source) {
+		source_note_data = get_result_row_data(explore_source)
+		const source_note_row = make_result_row(source_note_data, 'explore_source')
+		// source_note_row.querySelector('.search_result').classList.add("explore_source_note")
+		const source_separator = document.createElement('hr')
+
+		search_results_div.appendChild(source_note_row)
+		search_results_div.appendChild(source_separator)
+
+		// Display the direction of the "exploration"
+		if (explore_type == "parents" || explore_type == "children") {
+
+			const template = document.querySelector(
+				'#zkl_template_explore_results_direction_indicator')
+
+			const direction_indicator = template.content.cloneNode(true)
+			const indicator = direction_indicator.querySelector('.explore_results_indicator')
+			const indicator_text = (explore_type == "children") ? "V" : "^"
+			indicator.textContent = indicator_text
+
+			search_results_div.appendChild(direction_indicator)
+		}
+	}
 
 	for (var i = data.length - 1; i >= 0; i--) {
 
@@ -117,11 +217,12 @@ document.getElementById("zkl_general_query_form")
 
 		const formData = new FormData(event.target);
 
-		// console.log('form data', formData)
+		console.log('form data', formData)
 
 		fetch(`${base_url}/general_search`, {
 			method: "POST",
 			body: formData,
+			// headers: {}  // No need as set automatically by browswer (multipart/form-data)
 		})
 		.then(response => response.json())
 		.then(data => {

@@ -114,13 +114,36 @@ def general_search():
 	# return query
 
 	# data = request.get_json()
-	data = request.form
+	content_type = request.headers.get('Content-Type')
+
+	if not content_type:
+		return (
+				json.dumps({'error': 'Must provide a content type for a search'}),
+				400
+			)
+
+	# only two post content-types I know about
+	if content_type == "application/json":
+		data = request.get_json()
+	elif (
+			('multipart/form-data' in content_type)  # multipart often contains a boundary spec
+			or
+			('application/x-www-form-urlencoded' == content_type)
+		):
+		data = request.form
+	else:
+		return (
+				json.dumps({'error': 'Content-type inappropriate for search'}),
+				400
+			)
+
 	query = data.get('query')
 	if not query:
 		return (
 				json.dumps({'error': 'Must provide a query'}),
 				400
 			)
+
 	db = new_db()
 	full_query = zkl.mk_super_query(query)
 	results = zkl.convert_rows_to_dicts(db.ex(full_query))
